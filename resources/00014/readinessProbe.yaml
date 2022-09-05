@@ -1,0 +1,23 @@
+apiVersion: v1 # 컨트롤러 api 버전
+kind: ReplicationController # 컨트롤러 api 버전
+metadata: # 컨트롤러 메타 정보
+  name: kubia-rc # 컨트롤러 명칭
+spec: # 컨트롤러 스팩
+  replicas: 2 # 컨테이너 생성 수
+  selector: # 선택할 레이블
+    app: kubia # 레이블 정보
+  template: # 생성 템플릿
+    metadata: # 템플릿 메타 정보
+      labels: # 레이블 정보
+        app: kubia # 생성 레이블
+    spec: # 템플릿 스펙 정보
+      containers: # 템플릿 컨테이너
+      - name: kubia # 컨테이너 명칭
+        image: luksa/kubia # 컨테이너 이미지
+        ports: # 컨테이너 포트
+          - containerPort: 8080 # 컨테이너 오픈 포트
+        readinessProbe: # 리드니스 프로브
+          exec: # 주기적으로 실행할 명령어
+            command: # 명령어 묶음
+              - ls
+              - /var/ready

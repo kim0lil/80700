@@ -1,0 +1,14 @@
+apiVersion: v1 # 파드의 api 버전
+kind: Pod # 파드 타입
+metadata: # 기본 메타 정보
+  name: kub-pod-none-namespace # 파드 명칭
+  labels: # 레이블
+    version: stable # 사용자 레이블 1
+    app: hello-node # 사용자 레이블 2
+spec: # 파드 스펙
+  containers: # 컨테이너 스팩
+    - image: kim0lil/docker-image-node # 도커 이미지
+      name: kub-hello-node # 컨테이너 이름
+      ports: # 포트 정보
+        - containerPort: 8080 # 접속 포트
+          protocol: TCP # 접속 프로토콜

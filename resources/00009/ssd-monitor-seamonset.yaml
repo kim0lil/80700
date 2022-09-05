@@ -1,0 +1,18 @@
+apiVersion: apps/v1 # 데몬셋 api 버전
+kind: DaemonSet # 데몬셋 타입
+metadata: # 기본 메타 정보
+  name: ssd-monitor # 데몬셋 명칭
+spec: # 데몬셋 스펙
+  selector: # 노드 셀렉터
+    matchLabels: # 레이블 매칭
+      app: ssd-monitor # 노드 레이블 명칭
+  template: # 새 파드에 사용할 템플릿
+    metadata: # 새 파드에 적용할 메타 정보
+      labels:
+        app: ssd-monitor #새 파드에 적용할 레이블 정보
+    spec: #새 파드에 적용할 스팩 정보
+      nodeSelector: # 반영할 노드 
+        disk: ssd # 레이블 매칭
+      containers: # 새 파드에 적용할 컨테이너
+      - name: main # 새 파드에 적용할 컨테이너 명칭
+        image: luksa/ssd-monitor # 새 파드에 적용할 컨테이너 이미지

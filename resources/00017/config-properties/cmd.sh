@@ -1,0 +1,1 @@
+kubectl exec -it fortune-config-map2 --container web-server -- /bin/ash

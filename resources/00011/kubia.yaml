@@ -1,0 +1,21 @@
+apiVersion: apps/v1 # 레플리카셋 api 버전
+kind: ReplicaSet # 레플리카셋 타입
+metadata: # 기본 메타 데이터
+  name: kubia-rs
+spec: # 레플리카셋 스펙
+  replicas: 3 # 레플리카셋이 관리하는 파드 숫자
+  selector:
+    matchLabels: # 레이블 매칭
+      app: kubia # 파드 레이블
+  template: # 새 파드에 적용할 템플릿
+    metadata: # 새 파드에 적용할 메타 데이터
+      labels: 
+        app: kubia # 새 파드에 적용할 레이블
+    spec: # 새 파드에 적용할 스펙
+      containers: # 새 파드에 적용할 컨테이너 
+      - name: kubia # 새 파드에 적용할 컨테이너 명칭
+        image: luksa/kubia # 새 파드에 적용할 컨테이너 이미지
+        ports: # 새 파드에 적용할 포트 정보
+        - containerPort: 8080 # 새 파드에 적용할 포트
+
+

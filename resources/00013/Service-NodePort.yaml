@@ -1,0 +1,12 @@
+apiVersion: v1 # 서비스 api 버전
+kind: Service # 서비스 타입
+metadata: # 서비스 메타 정보
+  name: kubia-nodeport # 서비스 명칭
+spec:
+  type: NodePort # 서비스 타입
+  ports:
+  - port: 80 #  서비스 포트
+    targetPort: 8080 # 대상 포트
+    nodePort: 30123 # 외부 노출 포트
+  selector: # 서비스 선택자
+    app: kubia # 서비스 레이블

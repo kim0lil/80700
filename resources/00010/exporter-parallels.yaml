@@ -1,0 +1,16 @@
+apiVersion: batch/v1 # 배치 잡 api 버전
+kind: Job # 잡 타입
+metadata: # 기본 메타 정보
+  name: batch-job-parallels # 배치 잡 명칭
+spec: # 배치 잡 스펙
+  completions: 5 # 성공 적으로 실행 되는 파드 개수
+  parallelism: 2 # 병렬로 처리 되는 개수
+  template: # 새 배치가 사용할 템플릿
+    metadata: # 새 배치가 사용할 메자 정보
+      labels:
+        app: batch-job # 새 배치가 사용할 레이블 정보
+    spec: # 새 잡에 적용할 스팩
+      restartPolicy: OnFailure # 재 실행 적용 여부 (default:Always[재 실행], Never:[재 실행 안함], OnFailure[실패시 재 실행])
+      containers: # 새 잡에 적용할 컨테이너
+      - name: main # 새 잡에 적용할 파드 명칭
+        image: luksa/batch-job # 새 잡에 적용할 컨테이너 이미지
