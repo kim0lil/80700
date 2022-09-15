@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubia
+spec:
+  strategy:
+    rollingUpdate:
+      maxSurge: 1 # 의도하는 레플리카 수량 보다 많을 수 있는 수량
+      maxUnavailable: 0 # 사용할 수 없는 파드의 수량(롤링하는 중 사라지는 파드)
+    type: RollingUpdate # 
+  replicas: 3
+  minReadySeconds: 10
+  selector:
+    matchLabels:
+      app: kubia
+  template:
+    metadata:
+      name: kubia
+      labels:
+        app: kubia
+    spec:
+      containers:
+      - image: luksa/kubia:v1
+        name: nodejs
