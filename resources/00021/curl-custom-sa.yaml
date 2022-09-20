@@ -10,3 +10,4 @@ spec:
     command: ["sleep", "999999"]
   - name: ambassador
     image: luksa/kubectl-proxy:1.6.2
+    
