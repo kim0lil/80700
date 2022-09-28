@@ -3,7 +3,7 @@ kind: Pod # 파드 타입
 metadata: # 파드 메타정보
   name: mongodb # 파드 명칭
 spec: 
-  volumes:
+  volumes: 
   - name: mongodb-data
     hostPath:
       path: /tmp/mongodb

@@ -29,3 +29,9 @@ kubectl rollout undo deployment kubia
 
 # show history
 kubectl rollout history deployment kubia
+
+# rollout pause
+kubectl rollout pause deployment kubia
+
+# rollout resume
+kubectl rollout resume deployment kubia

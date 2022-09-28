@@ -8,4 +8,4 @@ spec:
   - port: 80 # 서비스 포트 번호
     targetPort: 8080 # 포워딩 포트 번호
   selector: # 서비스 밸런싱 선택자
-    app: kubia # 서비스 밸런싱 레이블
+    app: node # 서비스 밸런싱 레이블

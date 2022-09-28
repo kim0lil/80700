@@ -8,4 +8,4 @@ spec:
   - port: 80 # 서비스 포트
     targetPort: 8080 # 서비스 대상 포트
   selector: # 서비스 선택자
-    app: kubia # 서비스 레이블
+    app: node # 서비스 레이블
