@@ -96,7 +96,36 @@ $ kubectl run hello-kube --restart='Always' --port=8080 --labels='app=node' --im
 # 서비스를 생성합니다.
 admin@jinhyeok MINGW64 ~/dev/80700/assets/00000 (master)
 $ kubectl create service loadbalancer node --tcp=80:8080
+
+# 미니 쿠버네티스를 사용하여 서비스를 오픈시킵니다.
+admin@jinhyeok MINGW64 ~/dev/80700/assets/00000 (master)
+$ minikube service node
+|-----------|------|-------------|---------------------------|
+| NAMESPACE | NAME | TARGET PORT |            URL            |
+|-----------|------|-------------|---------------------------|
+| default   | node | 80-8080/80  | http://192.168.49.2:31073 |
+|-----------|------|-------------|---------------------------|
+
+admin@jinhyeok MINGW64 ~/dev/80700/assets/00000 (master)
+$ curl http://192.168.49.2:31073
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is hello-kube"}
 ```
+
+첫번째 쿠버네티스 애플리케이션을 생성하였습니다.
+
+다음 장 부터는 쿠버네티스의 각 오브젝트를 하나씩 살펴보도록 하겠습니다.
+
+## 파드
+
+첫번째로 알아볼 오브젝트는 파드(`pod`)입니다.
+
+파드는 컨테이너를 동작 시키는 단위이며 이 파드를 사용하여 다양한 컨테이너를 묶어서 [사이드카](https://learn.microsoft.com/ko-kr/azure/architecture/patterns/sidecar) 형태로 지원하기도 합니다.
+
+
+
+
+
+
 
 
 # kubectl create deploy hello-deploy --port=8080 --image='kim0lil/80700:v-1.0.0' --replicas=3 --selector='app=node'
