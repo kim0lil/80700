@@ -119,11 +119,40 @@ $ curl http://192.168.49.2:31073
 
 첫번째로 알아볼 오브젝트는 파드(`pod`)입니다.
 
-파드는 컨테이너를 동작 시키는 단위이며 이 파드를 사용하여 다양한 컨테이너를 묶어서 [사이드카](https://learn.microsoft.com/ko-kr/azure/architecture/patterns/sidecar) 형태로 지원하기도 합니다.
+파드는 컨테이너를 동작 시키는 단위이며 이 파드를 사용하여 다양한 컨테이너를 묶어서 [사이드카](https://learn.microsoft.com/ko-kr/azure/architecture/patterns/sidecar) 형태로 배포 되고 사용 되기도 합니다.
+
+파일을 하나 생성한 다음 순서대로 따라하면서 설정파일을 만들어 보도록 하겠습니다.
+
+`00001.yml` 파일을 생성한 다음 아래 설정 값을 입력합니다.
+
+```yml
+apiVersion: v1                       # api 버전을 등록
+kind: Pod                            # 오브젝트 타입
+metadata:                            # 컨테이너 메타 정보를 등록
+    name: app-node                   # 파드 명칭을 등록
+    labels:                          # 레이블 등록
+        app: node                    # app=node 레이블을 등록
+spec:                                # 컨테이너 스팩을 등록
+    containers:                      # 컨테이너 정보를 등록
+    - image: kim0lil/80700:v-1.0.0   # 컨테이너 이미지를 등록
+      name: app                      # 컨테이너 명칭을 등록
+      ports:                         # 포트 정보를 등록
+      - containerPort: 8080          # 컨테이너와 연결할 포트를 등록
+        protocol: TCP                # 컨테이너와 연결할 포트의 프로토콜을 등록
+```
+
+설정값을 입력하였으면 파드를 생성해 보도록 하겠습니다.
+
+파드를 생성할 때에는 `kubectl`의 `create` 명령어를 통하여 생성할 수 있습니다.
+
+(설정 파일을 사용할 예정이므로 `-f`옵션을 추가하도록 합니다.)
 
 
-
-
+```sh
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00001/00001.yml
+pod/app-node created
+```
 
 
 
