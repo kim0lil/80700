@@ -289,7 +289,7 @@ pods                              po           v1                               
 ...
 ```
 
-### 네임스페이스
+### namespace
 
 쿠버네티스의 오브젝트들은 고유한 작업 영역안에서 실행 되고 있습니다.
 
@@ -445,6 +445,38 @@ NAME                       STATUS   AGE
 namespace/user-namespace   Active   4m32s
 ```
 
-# kubectl create deploy hello-deploy --port=8080 --image='kim0lil/80700:v-1.0.0' --replicas=3 --selector='app=node'
+네임스페이스의 다양한 활용 방법은 뒤쪽에서 차근 차근 알아 보도록 하겠습니다.
+
+### containers
+
+파드는 도커 이미지를 사용하여 서비스를 실행하며 하나 이상의 컨테이너를 사용하여 파드가 동작합니다.
+
+따라서 파드를 등록할 때 컨테이너 정보를 등록하여야 합니다.
+
+우리가 생성한 파드 설정 파일을 확인해 보면 파드에 등록되는 컨테이너를 확인할 수 있습니다.
+
+```yml
+apiVersion: v1                       # 오브젝트 스키마 버전을 등록
+kind: Pod                            # 오브젝트 타입
+...
+spec:                                # 컨테이너 스팩을 등록
+    containers:                      # 컨테이너 정보를 등록
+    - image: kim0lil/80700:v-1.0.0   # 컨테이너 이미지를 등록
+      name: app                      # 컨테이너 명칭을 등록
+      ports:                         # 포트 정보를 등록
+      - containerPort: 8080          # 컨테이너와 연결할 포트를 등록
+        protocol: TCP                # 컨테이너와 연결할 포트의 프로토콜을 등록
+```
+
+이번에는 하나 이상의 컨테이너를 적제한 파드를 생성한 다음 서비스를 추가하여 새로 생성한 파드와 연결 시켜 보도록 하겠습니다.
+
+그러기 위하여 파이썬 파일을 생성한 다음 이미지로 등록 하도록 합니다.
+
+
+
+
+
+### kubectl create deploy hello-deploy --port=8080 --image='kim0lil/80700:v-1.0.0' --replicas=3 --selector='app=node'
+### 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
 
 ## 서비스
