@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+    name: app-node
+    namespace: user-namespace    # 새로운 네임스페이스를 사용
+    labels:
+        app: node
+        version: v2
+spec:
+    containers:
+    - image: kim0lil/80700:v-1.0.0
+      name: app
+      ports:
+      - containerPort: 8080
+        protocol: TCP
+    

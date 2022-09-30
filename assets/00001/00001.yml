@@ -1,6 +1,6 @@
-apiVersion: v1                       # api 버전을 등록
+apiVersion: v1                       # 오브젝트 스키마 버전을 등록
 kind: Pod                            # 오브젝트 타입
-metadata:                            # 컨테이너 메타 정보를 등록
+metadata:                            # 오브젝트 메타 정보를 등록
     name: app-node                   # 파드 명칭을 등록
     labels:                          # 레이블 등록
         app: node                    # app=node 레이블을 등록
