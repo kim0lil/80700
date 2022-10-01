@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ReplicationController             # 오브젝트 타입은 레플리케이션 컨트롤러로 등록
+metadata:
+  name: replication-controller
+spec:
+  replicas: 3                           # 확장(복제) 수량을 {3}으로 셋팅 [preceed-1,preceed-2,preceed-3]과 동일
+  selector:                             # 복제되는 파드를 관리하기 위하여 레이블을 셋팅 (template의 레이블과 동일해야 합니다.)
+    app: replicas                       # 관리를 위한 레이블 명칭을 등록
+  template:                             # 확장(복제)를 위한 영역
+    metadata:                           # 확징(복제)되는 파드에 등록 될 메타 데이터
+      labels:                           # 확징(복제)되는 파드에 등록 될 레이블
+        app: replicas                   # 확징(복제)되는 파드에 등록 될 레이블을 등록
+    spec:                               # 확징(복제)되는 파드에 등록 될 스팩 정보
+      containers:                       # 확징(복제)되는 파드에 등록 될 컨테이너 정보
+      - name: proceed                   # 확징(복제)되는 파드에 등록 될 컨테이너 명칭을 등록
+        image: kim0lil/80700:v-1.0.0    # 확징(복제)되는 파드에 등록 될 컨테이너 이미지를 등록
+        ports:                          # 확징(복제)되는 파드에 등록 될 포트 정보
+        - containerPort: 8080           # 확징(복제)되는 파드에 등록 될 컨테이너 포트 정보를 등록

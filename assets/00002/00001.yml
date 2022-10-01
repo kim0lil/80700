@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: proceed-1
+  labels:
+    app: replicas
+spec:
+  containers:
+  - name: proceed-1
+    image: kim0lil/80700:v-1.0.0
+    ports:
+    - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: proceed-2
+  labels:
+    app: replicas
+spec:
+  containers:
+  - name: proceed-2
+    image: kim0lil/80700:v-1.0.0
+    ports:
+    - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: proceed-3
+  labels:
+    app: replicas
+spec:
+  containers:
+  - name: proceed-3
+    image: kim0lil/80700:v-1.0.0
+    ports:
+    - containerPort: 8080
+
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: replicas-service
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: replicas
