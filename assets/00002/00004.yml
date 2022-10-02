@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: ReplicaSet                     # 오브젝트 타입은 레플리카셋으로 등록
+metadata:
+  name: replica-set
+spec:
+  replicas: 3
+  selector:                          # 복제되는 파드를 관리하기 위하여 선택자
+    matchLabels:                     # 레이블을 사용하여 매칭을 시도
+      app: replica-set               # 관리를 위한 레이블 명칭을 등록
+  template:
+    metadata:
+      labels:
+        app: replica-set
+    spec:
+      containers:
+      - name: proceed
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080

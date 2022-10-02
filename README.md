@@ -139,14 +139,17 @@ pod "hello-kube" deleted
 ```sh
 # 노드 정보를 조회
 $ kubectl get node
-NAME       STATUS   ROLES           AGE   VERSION
-minikube   Ready    control-plane   8d    v1.24.1
+NAME            STATUS   ROLES           AGE     VERSION
+kubenetes       Ready    control-plane   7m27s   v1.24.1
+kubenetes-m02   Ready    <none>          6m44s   v1.24.1
+kubenetes-m03   Ready    <none>          5m49s   v1.24.1
+
 
 # 노드 상세 정보를 확인
 # minikube를 사용하므로 control-plane이 현재 노드로 되어 있다.
 admin@jinhyeok MINGW64 ~/dev/80700 (master)
-$ kubectl describe node minikube
-Name:               minikube
+$ kubectl describe node kubenetes
+Name:               kubenetes
 Roles:              control-plane
 Labels:             beta.kubernetes.io/arch=amd64
 ...
@@ -173,7 +176,7 @@ To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
 
 첫번째로 알아볼 오브젝트는 파드(`pods`)입니다.
 
-파드는 컨테이너를 동작 시키는 단위이며 이 파드를 사용하여 다양한 컨테이너를 묶어서 [사이드카](https://learn.microsoft.com/ko-kr/azure/architecture/patterns/sidecar) 형태로 배포 되고 사용 되기도 합니다.
+파드는 쿠버네티스를 동작 시키는 기본 단위이며 이 파드를 사용하여 다양한 컨테이너를 묶어서 [사이드카](https://learn.microsoft.com/ko-kr/azure/architecture/patterns/sidecar) 형태로 배포 되고 사용 되기도 합니다.
 
 파일을 하나 생성한 다음 순서대로 따라하면서 설정파일을 만들어 보도록 하겠습니다.
 
@@ -241,7 +244,7 @@ pod "app-node" deleted
 
 쿠버네티스의 서비스는 파드의 이 레이블을 사용하여 사용자의 요청을 포워딩하는데 사용합니다.
 
-다시 한번 `00001.yml` 설정 파일을 사용하여 파드를 생성한 다음 등록 된 `label`을 확인해 본 다음
+다시 한번 `00001.yml` 설정 파일을 사용하여 파드를 생성한 다음 등록 된 `label`을 확인한 다음
 
 서비스를 상세 조회해 보도록 하겠습니다.
 
@@ -275,7 +278,7 @@ app-node   1/1     Running   0          7m39s   node
 admin@jinhyeok MINGW64 ~/dev/80700 (master)
 $ kubectl get service --selector='app=node' --show-labels
 NAME   TYPE           CLUSTER-IP    EXTERNAL-IP   PORT(S)        AGE   LABELS
-node   LoadBalancer   10.110.5.26   <pending>     80:31073/TCP   27h   app=node
+node   LoadBalancer   10.110.5.26   <pending>     80:31073/TCP    7m   app=node
 
 # 서비스를 상세 조회
 admin@jinhyeok MINGW64 ~/dev/80700 (master)
@@ -286,18 +289,54 @@ Labels:                   app=node
 Annotations:              <none>
 Selector:                 app=node
 ...
-
-# 테스트가 끝난 파드를 삭제
-admin@jinhyeok MINGW64 ~/dev/80700 (master)
-$ kubectl delete pods app-node
-pod "app-node" deleted
 ```
 
 서비스의 상세 내용을 확인하면 `Selector`의 속성값으로 `app=node`를 지정하고 있다는 것을 확인합니다.
 
 이 `Selector`를 사용하여 서비스는 사용자의 요청을 원하는 파드로 연결할 것입니다.
 
-깊은 설명은 서비스 파트에서 다루도록 하고 일단은 서비스와 파드를 연결하는 역활을 이 `Labels`와 `Selector`가 하고 있다는 것을 기억하도록 합니다.
+깊은 설명은 서비스 파트에서 다루도록 하고 일단은 서비스와 파드를 연결하는 역활을 이 `Labels`와 `Selector`가 하고 있다는 것만 기억하도록 합니다.
+
+이번에는 동작중인 파드의 레이블을 수정해볼 것입니다.
+
+생성된 파드의 레이블을 수정할 경우 `kubectl label`명령어를 사용하여 수정할 수 있습니다.
+
+```sh
+# 파드의 레이블 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods --show-labels
+NAME       READY   STATUS    RESTARTS   AGE   LABELS
+app-node   1/1     Running   0          16s   app=node
+
+# 신규 등록 하는 레이블일 경우 추가적으로 항목을 등록
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl label pods app-node version=1.0.0
+pod/app-node labeled
+
+# 수정이 필요한 레이블일 경우 --overwrite=true 옵션을 등록
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl label pods app-node app=nodejs --overwrite=true
+
+# 수정이 잘 되어 있는지 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -L=app,version
+NAME       READY   STATUS    RESTARTS   AGE     APP      VERSION
+app-node   1/1     Running   0          2m53s   nodejs   1.0.0
+
+```
+
+테스트를 끝낸 파드를 삭제 합니다.
+
+```sh
+# 테스트가 끝난 파드를 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete pods app-node
+pod "app-node" deleted
+```
+
+파드 외에도 쿠버네티스는 다양한 용도에서 레이블을 사용하고 있습니다.
+
+따라서 레이블은 다양한 방면에 거처서 나올 것이니 레이블의 용도만 이해하고 넘어 가도록 합니다.
 
 - - -
 
@@ -312,6 +351,25 @@ pod "app-node" deleted
 또한 나중에 다룰 `kube-proxy`를 통하여 아이피 변환등을 사용하여 각 노드 끼리의 통신도 처리 할 수 있습니다.
 
 ![쿠버네티스-2](/imgs/00000-1.png)
+
+파드를 생성한 다음 쿠버네티스로 `IP`가 할당 되어 있는지 확인해 봅니다.
+
+```sh
+# 설정 파일을 사용하여 파드 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00001/00001.yml
+pod/app-node created
+
+# IP 할당 여부를 확인
+$ kubectl get pods -o wide
+NAME       READY   STATUS    RESTARTS   AGE   IP        
+app-node   1/1     Running   0          21s   172.17.0.2
+
+# 테스트가 끝난 파드를 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete pods app-node
+pod "app-node" deleted
+```
 
 - - -
 
@@ -823,7 +881,6 @@ spec:
     ports:
     - containerPort: 8080
 
-
 ---
 
 apiVersion: v1
@@ -940,7 +997,7 @@ pod "proceed-3" deleted
 
 하지만 만일 파드내에 파일을 사용하여 저장하거나 각 파드의 고유한 처리가 있어야 한다면 이러한 확장은 불가능합니다.
 
-( 따라서 이러한 떄에는 파드의 상태를 가지도록 추가적인 작업이 필요하며 이는 뒤편에서 다룰 것입니다. )
+( 따라서 이러한 떄에는 스테이트 풀셋(`statefulset`)을 사용하여 파드의 상태를 가지도록 추가적인 작업이 필요하며 이는 뒤편에서 다룰 것입니다. )
 
 ![레플리케이션 컨트롤러-3](./imgs/00007.png)
 
@@ -1080,8 +1137,407 @@ replication-controller-nq982   1/1     Terminating   0          10m
 replication-controller-qs9nl   1/1     Terminating   0          10m
 ```
 
+#### scale
+
+레플리케이션 컨트롤러의 수평적인 확장을 위하여 `replicas`라는 속성을 등록하였습니다.
+
+이 속성을 사용하여 레플리케이션 컨트롤러의 확장 규모를 처리할 수 있습니다.
+
+레플리케이션 컨트롤러 외에도 나중에 나올 `deployments`와 `replicaset`등 에도 나올 예정이니 간단히 짚고 넘어 가겠습니다.
+
+이전에 우리가 생성한 레플리케이션 컨트롤러를 다시 생성해 보겠습니다.
+
+```sh
+# 스케일 실습을 위하여 레플리케이션 컨트롤러 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00002.yml 
+replicationcontroller/replication-controller created
+
+# 생성 된 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                           READY   STATUS    RESTARTS   AGE
+replication-controller-dpbrr   1/1     Running   0          8s
+replication-controller-pqzhw   1/1     Running   0          8s
+replication-controller-q8t2j   1/1     Running   0          8s
+```
+
+{3}개의 파드가 동작(Running)중에 있습니다.
+
+이때 사용자의 트래픽이 증가하여 하나의 서버가 더 필요해지게 될 경우 `scale` 명령어를 사용하여 {1}개의 파드를 추가적으로 생성할 수 있습니다.
+
+```sh
+# 레플리케이션 컨트롤러의 확장(복제)수을 {4}로 증가
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl scale replicationcontroller/replication-controller --replicas=4
+replicationcontroller/replication-controller scaled
+
+# 레플리케이션 컨트롤러가 {4}개의 파드를 관리하고 있는지 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                           READY   STATUS    RESTARTS   AGE
+replication-controller-8cq5h   1/1     Running   0          16s
+replication-controller-dpbrr   1/1     Running   0          2m35s
+replication-controller-pqzhw   1/1     Running   0          2m35s
+replication-controller-q8t2j   1/1     Running   0          2m35s
+```
+
+또는 설정 파일(`00002.yml`)을 사용하여 레플리케이션 컨트롤러의 스케일을 변경할 수도 있습니다
+
+이번에는 스케일을 {2}로 줄여보겠습니다.
+
+```sh
+# 설정 파일을 사용하여 확장(복제)수을 {2}로 증감
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl scale -f assets/00002/00002.yml --replicas=2
+replicationcontroller/replication-controller scaled
+
+# 레플리케이션 컨트롤러가 {2}개의 파드를 관리하고 있는지 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get po
+NAME                           READY   STATUS        RESTARTS   AGE
+replication-controller-8cq5h   1/1     Terminating   0          3m49s
+replication-controller-dpbrr   1/1     Terminating   0          6m8s
+replication-controller-pqzhw   1/1     Running       0          6m8s
+replication-controller-q8t2j   1/1     Running       0          6m8s
+```
+
+또는 레이블을 사용하여 스케일을 변경할 수도 있습니다.
+
+스케일을 {3}으로 다시 복구 시키겠습니다.
+
+```sh
+# 레이블을 사용하여 확장(복제)수을 {2}로 증감
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl scale replicationcontroller -l='app=replicas' --replicas=3
+replicationcontroller/replication-controller scaled
+
+# 레플리케이션 컨트롤러가 {3}개의 파드를 관리하고 있는지 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                           READY   STATUS    RESTARTS   AGE
+replication-controller-ntmqr   1/1     Running   0          10s
+replication-controller-pqzhw   1/1     Running   0          8m31s
+replication-controller-q8t2j   1/1     Running   0          8m31s
+
+# 다음 실습을 위하여 레플리케이션 컨트롤러 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete rc replication-controller
+replicationcontroller "replication-controller" deleted
+```
+
+#### liveness probe
+
+레플리케이션 컨트롤러는 기본적인 오류를 처리할 수 있습니다.
+
+이는 컨테이너가 올바르게 동작하는지 확인하는데 유용합니다.
+
+그 중에서도 `liveness probe`는 컨테이너의 요청을 확인하여 컨테이너의 동작 여부를 확인합니다.
+
+라이브니스 프로브의 경우 3가지 메너니즘을 사용하여 컨테이너가 올바르게 동작하는지 확인합니다.
+
+1. Define a liveness command : 명령어를 통하여 동작 여부를 확인합니다. (`exec.command`속성을 사용)
+2. Define a liveness HTTP request : HTTP의 Get요청을 통하여 동작 여부를 확인합니다. (`httpGet`속성을 사용)
+3. Define a TCP liveness probe : TCP 요청(`소켓 요청`)을 통하여 동작 여부를 확인합니다. (`tcpSocket`속성을 사용)
+4. Define a gRPC liveness probe : gRPC 소켓을 통하여 동작 여부를 확인 (베타 버전이므로 상세 내용은 [공식홈페이지](https://github.com/grpc-ecosystem/grpc-health-probe/)참조)
+
+이 중 HttpGet 요청부터 실습새 보겠습니다.
+
+기존에 작성하였던 `node`파일을 컨테이너 동작 여부를 확인할 수 있도록 수정하도록 하겠습니다.
+
+```js
+const http = require('http');
+const os   = require('os');
+const port = 8080;
+
+//- 서비스 처리기를 생성한다.
+const serverProcessHandler = (req, res) => {
+    
+    //- [healthy]요청일 경우 컨테이너의 유효성을 검사
+    if ( req.url == '/healthy' )
+    {
+        //- 전송할 데이터 셋팅    
+        var data = {
+            ServerTime : new Date()
+        }
+        
+        //- 헤더 및 데이터 전송
+        res.writeHead(200, {'Content-Type': 'application/json'});
+        res.end(JSON.stringify(data));
+    }
+    //- [unhealthy]요청일 경우 컨테이너의 유효성 검사를 하지 않음
+    else if ( req.url == '/unhealthy' )
+    {
+        //- 헤더 및 데이터 전송
+        res.writeHead(404);
+        res.end();
+    }
+    else
+    {
+        //- 전송할 데이터 셋팅    
+        var data = {
+            error_code    : 0, 
+            error_message : null, 
+            data          : 'Hello Kubernetes this is Container ID is '.concat(os.hostname())
+        }
+
+        //- 헤더 및 데이터 전송
+        res.writeHead(200, {'Content-Type': 'application/json'});
+
+        res.end(JSON.stringify(data));
+    }
+} 
+
+const serverOpenHandler = function() {
+
+    console.log(`server is running at http://127.0.0.1:${port}`);
+}
+
+//- 서버를 생성한다.
+const www = http.createServer(serverProcessHandler);
+
+//- 생성한 서버를 오픈한다.
+www.listen(port, serverOpenHandler);
+```
+
+이미지를 빌드한 다음 서버로 전송합니다.
+
+```sh
+# 이미지를 빌드
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker build -t kim0lil/80700:v-2.0.0 assets/00002/00003
+...
+
+# 서버로 전송
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker push kim0lil/80700:v-2.0.0
+...
+```
+
+파드의 설정을 위한 파일(`00003.yml`)을 생성한 다음 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-http-get-healthy
+  labels:
+    app: liveness
+spec:
+  containers:
+  - name: liveness-http-get
+    image: kim0lil/80700:v-2.0.0
+    livenessProbe:              # 라이브니스 프로브 설정
+      periodSeconds: 5          # 라이브니스 프로브의 주기적인 요청 시간
+      initialDelaySeconds: 5    # 컨테이너 초기화 시 딜레이 시간(s) 등록
+      httpGet:                  # httpGet 요청을 실행
+        path: /healthy          # get 요청 경로를 등록
+        port: 8080              # 요청 할 포트 번호 등록
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-http-get-unhealthy
+  labels:
+    app: liveness
+spec:
+  containers:
+  - name: liveness-http-get
+    image: kim0lil/80700:v-2.0.0
+    livenessProbe:              # 라이브니스 프로브 설정
+      periodSeconds: 5          # 라이브니스 프로브의 주기적인 요청 시간
+      initialDelaySeconds: 5    # 컨테이너 초기화 시 딜레이 시간(s) 등록
+      httpGet:                  # httpGet 요청을 실행
+        path: /unhealthy        # get 요청 경로를 등록(unhealthy)
+        port: 8080              # 요청 할 포트 번호 등록
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+```
+
+라이브니스가 포함 된 파드를 생성합니다.
+
+`liveness-http-get-healthy`파드의 경우 올바르게 동작하는 반면 `liveness-http-get-unhealthy`파드는 올바르지 않는 실행을 보이게 될 것입니다.
+
+또한 라이브니스 프로브에 의하여 `1분` 단위로 서버의 무한하게 재시작을 실행하게 될 것입니다.
+
+```sh
+# 설정 파일을 사용하여 파드 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00003/00003.yml
+pod/liveness-http-get-healthy created
+pod/liveness-http-get-unhealthy created
+
+# 파드를 재 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get po
+NAME                          READY   STATUS    RESTARTS   AGE
+liveness-http-get-healthy     1/1     Running   0          9s
+liveness-http-get-unhealthy   1/1     Running   0          9s
+
+# 대략 1분 뒤 파드를 재 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get po
+NAME                          READY   STATUS    RESTARTS     AGE
+liveness-http-get-healthy     1/1     Running   0            57s
+liveness-http-get-unhealthy   1/1     Running   1 (7s ago)   57s
+
+# 상세 정보를 확인합니다.
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pods liveness-http-get-unhealthy
+Name:         liveness-http-get-unhealthy
+...
+  Type     Reason     Age                     From               Message
+  ----     ------     ----                    ----               -------
+  Normal   Scheduled  4m35s                   default-scheduler  Successfully assigned default/liveness-http-get-unhealthy to minikube
+  Normal   Killing    2m45s (x3 over 4m15s)   kubelet            Container liveness-http-get failed liveness probe, will be restarted
+  Normal   Pulled     2m15s (x4 over 4m34s)   kubelet            Container image "kim0lil/80700:v-2.0.0" already present on machine
+  Normal   Created    2m15s (x4 over 4m34s)   kubelet            Created container liveness-http-get
+  Normal   Started    2m15s (x4 over 4m34s)   kubelet            Started container liveness-http-get
+  Warning  Unhealthy  2m10s (x10 over 4m25s)  kubelet            Liveness probe failed: HTTP probe failed with statuscode: 404
+```
+
+`livenessProbe`의 `initialDelaySeconds`는 프로브가 컨테이너의 최초 요청하는 시간의 딜레이를 지정하는 속성으로써 웹 서비스의 경우 내부 애플리케이션을 초기화 하는 설정이 들아가게 되며
+
+다양한 이유로 초기화가 늦어지게 됩니다.
+
+따라서 `initialDelaySeconds`는 애플리케이션의 초기화 딜레이시간을 산정하여 5~30내의 값으로 지정하도록 합니다.
+
+라이브니스 프로브의 경우 애플리케이션의 오류를 처리하는 가볍지만 강력한 방법이긴하지만 라이브리스 프로브가 무거워질 경우 내부 애플리케이션의 요청을 주기적으로 처리해야 하므로 실제 서비스를 침해할 수 있으니 주의하여야 합니다.
+
+### replicaset
+
+레플리에키션 컨트롤러는 초기 쿠버네티스에는 유일하게 레플리카를 가지는 오브젝트였습니다.
+
+하지만 이후 레플리케이션 컨트롤러와 유사한 오브젝트가 생겼으며 레플리케이션 컨트롤러의 완벽하게 대응되는 오브젝트인 레플리카셋 (`replicaset`)이 도입되었습니다.
+
+또한 레플리카셋은 레플리케이션 컨트롤로보다 진보된 레이블 매칭이 추가 되어 기존 레플리케이션 컨트롤러가 불가능한 `app=*`와 같은 식으로 파드를 매칭할 수 있게 되었습니다.
+
+먼저 레플리카셋을 지원하는 `api`의 버전을 확인하겠습니다.
+
+```sh
+# api-resources를 사용하여 지원하는 api 버전을 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl api-resources
+NAME                              SHORTNAMES   APIVERSION                             NAMESPACED   KIND
+...
+replicasets                       rs           apps/v1                                true         ReplicaSet
+...
+```
+
+기존 레플리케이션 컨트롤러를 만드는 방법과 유사하므로 `kim0lil/80700:v-1.0.0`이미지를 사용해보도록 하겠습니다.
+
+설정(디스크립터) 생성을 위하여 설정(`00004.yml`) 파일을 생성한 다음 설정 값을 등록합니다.
+
+( 주석이 달려 있는 부분이 `replicationcontroller`와 변경 된 부분입니다. )
+
+```yml
+apiVersion: apps/v1
+kind: ReplicaSet                     # 오브젝트 타입은 레플리카셋으로 등록
+metadata:
+  name: replica-set
+spec:
+  replicas: 3
+  selector:                          # 복제되는 파드를 관리하기 위하여 선택자
+    matchLabels:                     # 레이블을 사용하여 매칭을 시도
+      app: replica-set               # 관리를 위한 레이블 명칭을 등록
+  template:
+    metadata:
+      labels:
+        app: replica-set
+    spec:
+      containers:
+      - name: proceed
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080
+```
+
+설정 파일을 사용하여 레플리카 셋을 생성하겠습니다.
+
+```sh
+# 레플리카셋 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00004.yml
+replicaset.apps/replica-set created
+
+# 생성한 레플리카셋 조회
+# 동일 명령문  [ kubectl get rs ]
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get replicaset
+NAME          DESIRED   CURRENT   READY   AGE
+replica-set   3         3         3       65s
+
+# 레플리카셋이 생성한 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod -l='app=replica-set'
+NAME                READY   STATUS    RESTARTS   AGE
+replica-set-2826g   1/1     Running   0          55s
+replica-set-7xc27   1/1     Running   0          55s
+replica-set-rbmfw   1/1     Running   0          55s
+
+# 테스트를 끝낸 레플리카셋을 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete replicaset replica-set
+replicaset.apps "replica-set" deleted
+
+```
+
+레플리카셋은 레플리케이션의 레이블 매칭 외에도 풍부한 표현식(`expression`)을 지원합니다.
+
+따라서 아래와 같은 표현식이 가능합니다. (설정 파일 = `00006.yml`)
+
+```yml
+apiVersion: apps/v1
+kind: ReplicaSet                     # 오브젝트 타입은 레플리카셋으로 등록
+metadata:
+  name: replica-set
+spec:
+  replicas: 3
+  selector:                          # 복제되는 파드를 관리하기 위하여 선택자
+    matchExpressions:                # 표현식을 사용하여 파드를 매칭
+    - key: app                       # 레플리케이션이 파드를 인식할 수 있는 레이블 키
+      operator: In                   # 값 집합과 키의 관계를 나타냅니다. In(포함), NotIn(비포함), Exists(존재), DoesNotExist(존재안함)를 등록
+      values:                        # 키와 값 집합의 관계 매칭을 위한 실제 값 (배열로 등록)
+        - replica-set
+  template:
+    metadata:
+      labels:
+        app: replica-set
+    spec:
+      containers:
+      - name: proceed
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080
+```
+
+유의해야 할 점은 `operator`에서 In(포함), NotIn(비포함), Exists(존재), DoesNotExist(존재안함)을 정확히 입력해야 합니다.
+
+1. In(포함) : 레이블이 `key=value`가 등록 되어 있을 경우 매칭
+2. NotIn(비포함) : 레이블이 `key!=value`일 경우 매칭
+3. Exists(존재) : 키 레이블이 등록되어 있을 경우 매칭(`value`는 미 매칭)
+4. DoesNotExist(존재안함) : 키 레이블이 등록되어 있지 않을 경우 매칭(`value`는 미 매칭)
+
+### service
+
+쿠버네티스의 파드는 모두 고유한 `IP`를 가지고 있습니다.
+
+이것은 호스트의 포트와 연결하거나 `NAT`의 지원 없이도 파드간의 고유한 연결망을 가진다는 말이 됩니다.
+
+따라서 클러스트 서비스를 사용하여 
 
 
+### deployments
+
+디플로이먼트는 레플리카셋을 관리하는 상위 오브젝트입니다.
+
+배포를 위한 롤아웃(`rollout`)과 같은 파드와 레플리카셋의 오브젝트를 관리합니다.
 
 
 

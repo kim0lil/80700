@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: ReplicaSet                     # 오브젝트 타입은 레플리카셋으로 등록
+metadata:
+  name: replica-set
+spec:
+  replicas: 3
+  selector:                          # 복제되는 파드를 관리하기 위하여 선택자
+    matchExpressions:                # 표현식을 사용하여 파드를 매칭
+    - key: app                       # 레플리케이션이 파드를 인식할 수 있는 레이블 키
+      operator: In                   # 값 집합과 키의 관계를 나타냅니다. In(포함), NotIn(비포함), Exists(존재), DoesNotExist(존재안함)를 등록
+      values:                        # 키와 값 집합의 관계 매칭을 위한 실제 값 (배열로 등록)
+        - replica-set
+  template:
+    metadata:
+      labels:
+        app: replica-set
+    spec:
+      containers:
+      - name: proceed
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080

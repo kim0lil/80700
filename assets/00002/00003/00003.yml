@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-http-get-healthy
+  labels:
+    app: liveness
+spec:
+  containers:
+  - name: liveness-http-get
+    image: kim0lil/80700:v-2.0.0
+    livenessProbe:              # 라이브니스 프로브 설정
+      periodSeconds: 5          # 라이브니스 프로브의 주기적인 요청 시간
+      initialDelaySeconds: 5    # 컨테이너 초기화 시 딜레이 시간(s) 등록
+      httpGet:                  # httpGet 요청을 실행
+        path: /healthy          # get 요청 경로를 등록
+        port: 8080              # 요청 할 포트 번호 등록
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-http-get-unhealthy
+  labels:
+    app: liveness
+spec:
+  containers:
+  - name: liveness-http-get
+    image: kim0lil/80700:v-2.0.0
+    livenessProbe:              # 라이브니스 프로브 설정
+      periodSeconds: 5          # 라이브니스 프로브의 주기적인 요청 시간
+      initialDelaySeconds: 5    # 컨테이너 초기화 시 딜레이 시간(s) 등록
+      httpGet:                  # httpGet 요청을 실행
+        path: /unhealthy        # get 요청 경로를 등록(unhealthy)
+        port: 8080              # 요청 할 포트 번호 등록
+    ports:
+    - containerPort: 8080
+      protocol: TCP
