@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+spec:
+  ports:                 # 포드 정보를 입력
+  - port: 80             # 서비스가 사용할 포트를 등록
+    targetPort: 8080     # 서비스가 파드로 포워딩할 포트를 등록
+  selector:              # 파드를 선택하기 위한 레이블 선택자
+    app: node            # 파드를 선택하기 위한 레이블을 등록

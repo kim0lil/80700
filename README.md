@@ -140,16 +140,14 @@ pod "hello-kube" deleted
 # 노드 정보를 조회
 $ kubectl get node
 NAME            STATUS   ROLES           AGE     VERSION
-kubenetes       Ready    control-plane   7m27s   v1.24.1
-kubenetes-m02   Ready    <none>          6m44s   v1.24.1
-kubenetes-m03   Ready    <none>          5m49s   v1.24.1
+minikube        Ready    control-plane   7m27s   v1.24.1
 
 
 # 노드 상세 정보를 확인
 # minikube를 사용하므로 control-plane이 현재 노드로 되어 있다.
 admin@jinhyeok MINGW64 ~/dev/80700 (master)
-$ kubectl describe node kubenetes
-Name:               kubenetes
+$ kubectl describe node minikube
+Name:               minikube
 Roles:              control-plane
 Labels:             beta.kubernetes.io/arch=amd64
 ...
@@ -1410,6 +1408,8 @@ Name:         liveness-http-get-unhealthy
 
 라이브니스 프로브의 경우 애플리케이션의 오류를 처리하는 가볍지만 강력한 방법이긴하지만 라이브리스 프로브가 무거워질 경우 내부 애플리케이션의 요청을 주기적으로 처리해야 하므로 실제 서비스를 침해할 수 있으니 주의하여야 합니다.
 
+##### @TODO (livenessProbe-cmd)
+
 ### replicaset
 
 레플리에키션 컨트롤러는 초기 쿠버네티스에는 유일하게 레플리카를 가지는 오브젝트였습니다.
@@ -1528,9 +1528,225 @@ spec:
 
 쿠버네티스의 파드는 모두 고유한 `IP`를 가지고 있습니다.
 
-이것은 호스트의 포트와 연결하거나 `NAT`의 지원 없이도 파드간의 고유한 연결망을 가진다는 말이 됩니다.
+이것은 호스트의 포트와 연결하거나 `NAT`의 지원 없이도 파드간의 고유한 연결망을 가질수 있다는 말이 됩니다.
 
-따라서 클러스트 서비스를 사용하여 
+또한 파드와 서비스는 서로간의 의존성 없이 동작하고 있습니다.
+
+파드를 등록할 때 우리는 원하는 서비스를 선택하거나 강제하지 않았습니다.
+
+따라서 서비스는 파드의 뒤편에서 레이블을 통하여 연결 됩니다.
+
+다시 돌아 가서 실습을 위하여 파드를 생성하는 레플리카셋 디스크립터(`00007.yml`)를 생성 하겠습니다.
+
+```yml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: app-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: node
+  template:
+    metadata:
+      labels:
+        app: node
+    spec:
+      containers:
+      - name: node
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+```
+
+설정 파일 중에 템플릿에 아이피를 할당 하거나 호스트의 포트와 연결 하는 부분이 없다는 것을 확인할 수 있습니다.
+
+그렇다면 어떻게 외부 아이피와 파드를 연결하는 것일까요?
+
+답은 서비스(`service`)에 있습니다.
+
+서비스는 파드의 레이블(`label`)을 사용하여 파드와 외부의 요청을 연결시킵니다.
+
+![서비스-1](./imgs/00008.png)
+
+이는 파드가 직접적인 요청을 받지 않는 다는 말이 됩니다.
+
+따라서 로드벨런서(`LoadBanancer`)등을 통하여 쉽게 서버의 요청을 분산 시킬 수 있게 됩니다.
+
+![서비스-2](./imgs/00009.png)
+
+로드벨런서와 관련 되어서는 뒤편에서 더 다루기로 하고 이번에는 서비스를 생성하는 설정파일(`00008.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+spec:
+  ports:                 # 포드 정보를 입력
+  - port: 80             # 서비스가 사용할 포트를 등록
+    targetPort: 8080     # 서비스가 파드로 포워딩할 포트를 등록
+  selector:              # 파드를 선택하기 위한 레이블 선택자
+    app: node            # 파드를 선택하기 위한 레이블을 등록
+```
+
+서비스를 생성한 다음 조회해 보도록 하겠습니다.
+
+```sh
+# 레플리카셋을 생성하여 파드를 관리
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00007.yml
+replicaset.apps/app-server created
+
+# 생성한 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod
+NAME               READY   STATUS    RESTARTS   AGE
+app-server-5hh9f   1/1     Running   0          3m49s
+app-server-bn77g   1/1     Running   0          4m8s
+app-server-gxl25   1/1     Running   0          3m49s
+
+# 서비스를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00008.yml
+service/app-service created
+
+# 서비스를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get service
+NAME          TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+app-service   ClusterIP   10.111.146.119   <none>        80/TCP    16s
+kubernetes    ClusterIP   10.96.0.1        <none>        443/TCP   24h
+```
+
+`PORT`의 속성값이 80으로 연결 되어 있는 것을 확인할수 있습니다.
+
+다음으로 `describe`를 사용하여 상세 정보를 조회합니다.
+
+```sh
+# 서비스를 상세 조회
+$ kubectl describe service app-service
+Name:              app-service
+Namespace:         default
+Labels:            <none>
+Annotations:       <none>
+Selector:          app=node
+Type:              ClusterIP
+IP Family Policy:  SingleStack
+IP Families:       IPv4
+IP:                10.111.146.119
+IPs:               10.111.146.119
+Port:              <unset>  80/TCP
+TargetPort:        8080/TCP
+Endpoints:         172.17.0.3:8080,172.17.0.4:8080,172.17.0.5:8080
+Session Affinity:  None
+Events:            <none>
+
+# 생성한 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -o wide
+NAME               READY   STATUS    RESTARTS   AGE   IP           ...
+app-server-5hh9f   1/1     Running   0          23m   172.17.0.4   ...
+app-server-bn77g   1/1     Running   0          24m   172.17.0.3   ...
+app-server-gxl25   1/1     Running   0          23m   172.17.0.5   ...
+
+```
+
+`endpoint`는 `172.17.0.3`로 연결 되어 있는게 보입니다.
+
+이는 이전에 조회한 `pod`에 `IP`와 연결되게 됩니다.
+
+![서비스-3](./imgs/00010.png)
+
+이는 서비스를 통하여 파드의 연결을 처리할 수 있다는 말과 같습니다.
+
+또는 파드의 아이피를 사용하여 할당 된 아이피(`Clust IP`)로 직접 요청도 가능합니다.
+
+```sh
+# 컨테이너를 실행하여 [서비스]로 요청
+# 서비스는 서비스 프록시를 사용하여 같은 요청일 경우에도 다른 컨테이로 전송 됨
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it app-server-5hh9f -- curl 10.111.146.119
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   104    0   104    0     0   101k      0 --:--:-- --:--:-- --:--:--  101k
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is app-server-gxl25"}
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it app-server-5hh9f -- curl 10.111.146.119
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   104    0   104    0     0   101k      0 --:--:-- --:--:-- --:--:--  101k
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is app-server-bn77g"}
+
+# 컨테이너를 실행하여 [클러스터 아이피]로 요청
+# 172.17.0.4 to 172.17.0.3
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it app-server-5hh9f -- curl 172.17.0.4:8080
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   104    0   104    0     0   101k      0 --:--:-- --:--:-- --:--:--  101k
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is app-server-bn77g"}
+
+# 172.17.0.4 to 172.17.0.5
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it app-server-5hh9f -- curl 172.17.0.5:8080
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   104    0   104    0     0   101k      0 --:--:-- --:--:-- --:--:--  101k
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is app-server-gxl25"}
+
+# 테스트가 끝난 서비스는 제거 합니다.
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete svc app-service
+service "app-service" deleted
+```
+
+![서비스-4](./imgs/00011.png)
+
+#### sessionAffinity
+
+같은 컨테이너에서 서비스로 요청을 보낼 경우 서비스는 서비스 프록시를 사용하여 요청을 처리할 컨테이너를 임의로 선택하여 요청을 전달하게 됩니다.
+
+하지만 애플리케이션에서 애플리케이션 내부의 세션을 처리할 경우 세션 처리가 불가능할 수 있으므로 같은 아이피로 접속하는 대상은 같은 컨테이너로 전송시켜야 합니다.
+
+이를 해결하는 옵션이 `sessionAffinity`입니다.
+
+새로운 서비스 설정 파일(`00009.yml`)을 생성한 다음 `sessionAffinity`가 추가 된 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service-session-affinity
+spec:
+  sessionAffinity: ClientIP    # 클라이언트의 아이피를 사용하여 같은 아이피 일 경우 같은 컨테이너를 선택
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: node
+```
+
+설정 파일을 사용하여 서비스를 생성한 다음 같은 아이피를 사용하여 테스트를 진행합니다.
+
+```sh
+# 세션 어피니티가 셋팅 된 서비스를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00009.yml
+service/app-service-session-affinity created
+
+```
+
+
+
+
 
 
 ### deployments
