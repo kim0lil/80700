@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment
+spec:
+  strategy: 
+    type: Recreate  # 최초 하나의 파드가 생성 된 다음 기본 레플리카셋의 모든 파드를 제거
+  minReadySeconds: 10
+  replicas: 5
+  selector:
+    matchLabels:
+      app: node
+  template:
+    metadata:
+      labels:
+        app: node
+    spec:
+      containers:
+      - name: node
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: deployment-service
+spec:
+  type: ClusterIP
+  selector:
+    app: node
+  ports:
+  - port: 80
+    targetPort: 8080

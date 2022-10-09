@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-node
+  labels:
+    app: node
+  annotations:                               # 어노테이션을 등록
+    imageregistry: https://hub.docker.com    # 어노테이션을 키:값으로 등록
+spec:
+  containers:
+  - image: kim0lil/80700:v-1.0.0
+    name: app
+    ports:
+    - containerPort: 8080
+      protocol: TCP

@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: rs-endpoint
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: endpoint
+  template:
+    metadata:
+      labels:
+        app: endpoint
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: cont-endpoint
+        ports:
+        - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-endpoint
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080

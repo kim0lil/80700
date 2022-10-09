@@ -371,6 +371,51 @@ pod "app-node" deleted
 
 - - -
 
+### annotation
+
+어노테이션은 레이블과 비슷하지만 관리용도가 아닌 파드의 메타 정보(로깅을 위한 정보, 빌드를 위한 정보)등을 등록하는데 사용합니다.
+
+새로운 파일(`00001-1.yml`)파일을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-node
+  labels:
+    app: node
+  annotations:                               # 어노테이션을 등록
+    imageregistry: https://hub.docker.com    # 어노테이션을 키:값으로 등록
+spec:
+  containers:
+  - image: kim0lil/80700:v-1.0.0
+    name: app
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+```
+
+파드를 생성한 다음 `describe`를 사용하여 생성한 파드를 조회합니다.
+
+```sh
+# 어노테이션 포함 된 파드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00001/00001-1.yml
+pod/app-node created
+
+# 어노테이션이 포함 된 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pods app-node
+...
+Labels:       app=node
+Annotations:  autopilot.gke.io/resource-adjustment:
+                {"input":{"containers":[{"name":"app"}]},"output":{"containers":[{"limits":{"cpu":"500m","ephemeral-storage":"1Gi","memory":"2Gi"},"reques...
+              imageregistry: https://hub.docker.com
+              seccomp.security.alpha.kubernetes.io/pod: runtime/default
+Status:       Running
+
+```
+
 ### apiVersion
 
 쿠버네티스의 모든 오브젝트는 사용할 수 있는 필드의 스키마가 정의 되어 있으며 이 스키마의 버전을 나타내는 게 `apiVersion` 속성입니다.
@@ -1526,17 +1571,25 @@ spec:
 
 ### service
 
-쿠버네티스의 파드는 모두 고유한 `IP`를 가지고 있습니다.
+쿠버네티스의 네트워크 모델에서의 파드는 모두 고유한 `IP`를 가지고 있습니다.
 
 이것은 호스트의 포트와 연결하거나 `NAT`의 지원 없이도 파드간의 고유한 연결망을 가질수 있다는 말이 됩니다.
 
+(파드간의 네트워크가 도달할 수 있다는 의미입니다.)
+
 또한 파드와 서비스는 서로간의 의존성 없이 동작하고 있습니다.
 
-파드를 등록할 때 우리는 원하는 서비스를 선택하거나 강제하지 않았습니다.
+파드를 등록할 때 우리는 원하는 서비스의 선택을 강요하지 않았습니다.
 
-따라서 서비스는 파드의 뒤편에서 레이블을 통하여 연결 됩니다.
+(서비스의 `endpoints`를 사용하여 강제 할 수 있지만 이는 `endpoints`에서 다룰 예정입니다.)
 
-다시 돌아 가서 실습을 위하여 파드를 생성하는 레플리카셋 디스크립터(`00007.yml`)를 생성 하겠습니다.
+서비스는 파드와 관계없이 파드의 뒤편에서 요청을 처리할 파드를 레이블을 통하여 연결 시킵니다.
+
+이는 파드와 서비스의 커플링이 낮아짐(종속성 줄어즘)을 의미합니다.
+
+바로 실습에 들어가보도록 하겠습니다.
+
+실습을 위하여 파드를 생성하는 레플리카셋 디스크립터(`00007.yml`)를 생성 하겠습니다.
 
 ```yml
 apiVersion: apps/v1
@@ -1734,32 +1787,2368 @@ spec:
     app: node
 ```
 
-설정 파일을 사용하여 서비스를 생성한 다음 같은 아이피를 사용하여 테스트를 진행합니다.
+설정 파일을 사용하여 서비스를 등록합니다.
+
+( 파드의 경우 기존의 파드를 사용합니다. )
 
 ```sh
-# 세션 어피니티가 셋팅 된 서비스를 생성
+# sessionAffinity 속성을 등록한 서비스를 생성
 admin@jinhyeok MINGW64 ~/dev/80700 (master)
 $ kubectl create -f assets/00002/00009.yml
 service/app-service-session-affinity created
 
+# sessionAffinity 속성을 등록한 서비스를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get service app-service-session-affinity
+NAME                           TYPE        CLUSTER-IP    EXTERNAL-IP   PORT(S)   AGE
+app-service-session-affinity   ClusterIP   10.54.3.139   <none>        80/TCP    16s
+
+# 이전에 등록한 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME               READY   STATUS    RESTARTS   AGE
+app-server-5hh9f   1/1     Running   0          23m
+app-server-bn77g   1/1     Running   0          24m
+app-server-gxl25   1/1     Running   0          23m
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it app-server-5hh9f -- curl 10.54.3.139
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   104    0   104    0     0  14857      0 --:--:-- --:--:-- --:--:-- 14857
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is app-server-bn77g"}
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it app-server-5hh9f -- curl 10.54.3.139
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   104    0   104    0     0  52000      0 --:--:-- --:--:-- --:--:--  101k
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is app-server-bn77g"}
+
+# 테스트가 끝난 파드와 서비스를 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete service,pods --all
 ```
 
+`sessionAffinity`속성을 입력할 경우 요청 시 클라이언트 아이피를 사용하여 항상 같은 처리기와 연결시켜 줍니다.
+
+#### type
+
+외부에 서비스를 위한 애플리케이션의 경우에는 포트를 사용하여 외부의 노출이 필요합니다.
+
+이는 서비스의 `type`을 사용하여 처리할 수 있습니다.
+
+쿠버네티스가 지원하는 타입은 아래와 같습니다.
+
+1. ClusterIP : 서비스를 클러스터의 내부 아이피로 노출시킵니다. 이는 외부로 나가지 애플리케이션에 사용되며 서비스의 기본 설정 값입니다.
+2. NodePort : 고정 포트를 사용하여 `ClusterIP`를 사용하여 서비스 파드의 아이피와 노드의 포트와 연결시킵니다.
+3. LoadBalancer : 클라우드 공급자(GCP,AWS)와 같은 클라우드에서 제공하는 밸런서를 통하여 서비스를 외부로 노출시킵니다. 이 경우 외부로 노출 되는 ClusterIP와 NodePort는 자동 설정 됩니다.
+4. ExternalName : CoreDNS와 같은 Dns를 사용하여 CNAME 레코드를 반환하여 서비스를 외부의 네임과 연결시킵니다.
+
+그 중 `ClusterIP`는 내부의 파드의 아이피를 묶어서 하나의 서비스 아이피로 노출합니다.
+
+현재 우리가 했던 것이 `ClusterIP`였으니 실습은 넘어 가도록 하겠습니다.
+
+`NodePort`의 경우는 파드의 아이피를 `Node`의 `Port`로 포워딩합니다.
+
+![서비스-5](./imgs/00012.png)
+
+실습을 위하여 설정 파일(`00010.yml`)을 생성한 다음 아래 설정 값을 입력합니다.
+
+```yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-port
+spec:
+  type: NodePort      # 타입을 'NodePort'노드 포트로 등록
+  selector:
+    app: node
+  ports:
+  - name: node
+    port: 80          # ClusterIP 포트를 등록
+    targetPort: 8080  # Container 포트를 등록
+    nodePort: 32700   # 외부에 노출할 노드의 포트를 등록
+```
+
+설정값을 사용하여 서비스를 등록합니다.
+
+중요한 점은 `NodePort` 서비스를 생성하였지만 내부적으로 `ClusterIP`를 생성하여 `Proxy`를 통하여 전송한다는 점입니다.
+
+```sh
+# 실습을 위하여 파드를 등록
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00007.yml
+replicaset.apps/app-server created
+
+# 레플리카셋과 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get replicaset,pods
+NAME                         DESIRED   CURRENT   READY   AGE
+replicaset.apps/app-server   3         3         3       25s
+
+NAME                   READY   STATUS    RESTARTS   AGE
+pod/app-server-9kjpn   1/1     Running   0          3m33s
+pod/app-server-dzr2w   1/1     Running   0          3m33s
+pod/app-server-qwgrd   1/1     Running   0          3m33s
+
+# 노드 포트 서비스를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00010.yml
+service/node-port created
+
+# 서비스의 엔드포인트를 확인
+# 내부 [10.111.228.112] 클러스트 아이피도 자동으로 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe service node-port
+Name:                     node-port
+Namespace:                default
+Labels:                   <none>
+Annotations:              <none>
+Selector:                 app=node
+Type:                     NodePort
+IP Family Policy:         SingleStack
+IP Families:              IPv4
+IP:                       10.111.228.112
+IPs:                      10.111.228.112
+Port:                     node  80/TCP
+TargetPort:               8080/TCP
+NodePort:                 node  32700/TCP
+Endpoints:                172.17.0.2:8080,172.17.0.2:8080,172.17.0.3:8080
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   <none>
+
+# 서비스의 ClusterIP로 요청을 실행
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod/app-server-9kjpn -- curl 10.111.228.112
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   104    0   104    0     0     98      0 --:--:--  0:00:01 --:--:--    98
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is app-server-dzr2w"}
+
+# 노드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get node -o wide
+NAME       STATUS   ROLES    AGE   VERSION   INTERNAL-IP    ...
+minikube   Ready    <none>   24h   v1.24.1   192.168.49.2   ...
+
+# 서비스의 NodePort로 요청을 실행
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod/app-server-9kjpn -- curl 192.168.49.2:32700
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   104    0   104    0     0  52000      0 --:--:-- --:--:-- --:--:-- 52000
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is app-server-dzr2w"}
+
+# 다음 실습을 위하여 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete pods,service,replicaset --all
+```
+
+`LoadBalancer`는 클라우드에서 제공하는 서비스를 사용하여 자동으로 클러스트 아이피를 생성하고 클러스트 된 아이피와 노드의 파드를 연결하고 연결된 노드의 포트와 외부 아이피를 연결시킵니다.
+
+![서비스-6](./imgs/00013.png)
+
+로드벨런서는 사용자의 요청을 내부 클러스터 아이피에 분배 하는 역활을 합니다.
+
+로드벨런서를 사용하게 되면 `ClusterIP`를 거처 `NodePort`와 외부 아이피를 연결시키는 역활을 합니다.
+
+현재까지는 파드에서 서비스를 찾을 경우 서비스의 `ClusterIP`를 직접 입력하여 요청을 처리하였습니다.
+
+하지만 실제적으로 이렇게 하는 것은 운영상에 어려움이 큽니다.
+
+파드는 수시로 삭제 되기도 하고 생성 되기도 하는 반면 생성 된 모든 파드는 서비스의 아이피를 찾아야 되니 말입니다.
+
+사실 파드 내부에서는 서비스를 찾는 다양한 방법을 제공하고 있습니다.
+
+실습을 위하여 파드와 서비스 설정 파일(`00011.yml`)을 하나 생성한 다음 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: env-service
+spec:
+  selector:
+    app: env
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+
+---
+
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: env-pod
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: env
+  template:
+    metadata:
+      labels:
+        app: env
+    spec:
+      containers:
+      - name: env-cont
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080
+```
+
+설정 파일을 사용하여 파드와 서비스를 생성한 다음 파드 내부로 접근하여 `env`를 확인해 봅니다.
+
+파드를 생성할 때 내부에 설정(`environment`)변수로써 선택 된 서비스를 등록합니다.
+
+이는 서비스 명칭을(`-`)를 `_`로 변경되며 모든 문자는 대문자로 변경 된 결과 변수로 등록됩니다.
+
+( `env-service`는 `ENV_SERVICE`로 변경 됩니다. )
+
+```sh
+# 파드와 서비스를 생성합니다.
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00011.yml
+service/env-service created
+pod/env-pod created
+
+# 생성한 파드와 서비스를 조회합니다.
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods,service
+NAME                READY   STATUS    RESTARTS   AGE
+pod/env-pod-cxjwt   1/1     Running   0          61s
+pod/env-pod-kc9z4   1/1     Running   0          61s
+pod/env-pod-ldpxg   1/1     Running   0          61s
+
+NAME                  TYPE        CLUSTER-IP    EXTERNAL-IP   PORT(S)   AGE
+service/env-service   ClusterIP   10.99.43.89   <none>        80/TCP    113s
+service/kubernetes    ClusterIP   10.96.0.1     <none>        443/TCP   2m42s
+
+# 파드에 연결된 서비스를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod/env-pod-cxjwt -- env | grep ENV_SERVICE
+Unable to use a TTY - input is not a terminal or the right kind of file
+ENV_SERVICE_SERVICE_HOST=10.99.43.89
+ENV_SERVICE_PORT=tcp://10.99.43.89:80
+ENV_SERVICE_PORT_80_TCP_PROTO=tcp
+ENV_SERVICE_PORT_80_TCP=tcp://10.99.43.89:80
+ENV_SERVICE_SERVICE_PORT=80
+ENV_SERVICE_PORT_80_TCP_PORT=80
+ENV_SERVICE_PORT_80_TCP_ADDR=10.99.43.89
+```
+
+이번에는 파드와 서비스를 삭제 하지 말고 다음 실습으로 넘어가 보도록 하겠습니다.
+
+쿠버네티스를 시작하게 되면 기본적으로 쿠버네티스의 `codedns`라는 파드명으로 `dns` 플러그인이 동작하게 됩니다.
+
+`coredns`는 컨테이너 내부에서 이름을 사용하여 서비스에 접근할 수 있게 만듭니다.
+
+바로 실습해보도록 하겠습니다.
+
+```sh
+# 컨테이너 내부로 접근
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod/env-pod-cxjwt -- /bin/bash
+
+# etc/resolv.conf 파일을 조회
+root@env-pod-cxjwt:/# cat /etc/resolv.conf
+nameserver 10.96.0.10
+search default.svc.cluster.local svc.cluster.local cluster.local
+options ndots:5
+
+# dns를 사용하여 서비스에 접근
+root@env-pod-cxjwt:/# curl http://env-service.default.svc.cluster.local
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is env-pod-kc9z4"}
+
+# dns를 사용하여 서비스에 접근
+root@env-pod-cxjwt:/# curl http://env-service
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is env-pod-ldpxg"}
+
+# 컨테이너 종료
+root@env-pod-cxjwt:/# exit
+
+# 테스트가 끝난 파드와 서비스는 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete po,service,replicaset --all
+```
+
+#### endpoints
+
+서비스를 생성하는 방법은 어렵지 않았을 것입니다.
+
+이번에는 `selector`를 수동으로 구성하는 방법에 관하여 설명하겠습니다.
+
+방금전에 우리가 생성한 서비스 설정 파일을 다시 가져와 보겠습니다.
+
+```yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: env-service
+spec:
+  selector:
+    app: env
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+설정 파일 중에서 `{spec}.{selector}` 항목이 하는 일은 등록 된 레이블이 있는 파드를 서비스로 묶어서 내부 아이피로 노출하는 역활이었습니다.
+
+하지만 실질적으로는 파드와 서비스는 직접연결 되지 않습니다.
+
+둘 사이에서 `endpoints`라는 오브젝트가 두 사이를 이어주는 역활을 합니다.
+
+실습을 위하여 이전에 생성한 설정파일을 사용하여 다시 한번 파드와 서비스를 생성해보겠습니다.
+
+```sh
+# 레플리카셋과 서비스를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl apply -f assets/00002/00011.yml
+service/env-service created
+replicaset.apps/env-pod created
+
+# 생성한 오브젝트(레플리카셋,파드,서비스)를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get replicaset,pods,service
+NAME                      DESIRED   CURRENT   READY   AGE
+replicaset.apps/env-pod   3         3         3       2m51s
+
+NAME                READY   STATUS    RESTARTS   AGE
+pod/env-pod-4nzct   1/1     Running   0          2m51s
+pod/env-pod-j5979   1/1     Running   0          2m51s
+pod/env-pod-kvj5k   1/1     Running   0          2m51s
+
+NAME                  TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+service/env-service   ClusterIP   10.101.105.251   <none>        80/TCP    2m51s
+service/kubernetes    ClusterIP   10.96.0.1        <none>        443/TCP   6m53s
+
+# 서비스를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe service env-service
+Name:              env-service
+Namespace:         default
+Labels:            <none>
+Annotations:       <none>
+Selector:          app=env
+Type:              ClusterIP
+IP Family Policy:  SingleStack
+IP Families:       IPv4
+IP:                10.101.105.251
+IPs:               10.101.105.251
+Port:              <unset>  80/TCP
+TargetPort:        8080/TCP
+Endpoints:         172.17.0.3:8080,172.17.0.4:8080,172.17.0.5:8080
+Session Affinity:  None
+Events:            <none>
+
+# 엔드포인트를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe endpoints env-service
+Name:         env-service
+Namespace:    default
+Labels:       <none>
+Annotations:  endpoints.kubernetes.io/last-change-trigger-time: 2022-10-04T13:12:23Z
+Subsets:
+  Addresses:          172.17.0.3,172.17.0.4,172.17.0.5
+  NotReadyAddresses:  <none>
+  Ports:
+    Name     Port  Protocol
+    ----     ----  --------
+    <unset>  8080  TCP
+
+Events:  <none>
+
+# 테스트가 끝난 리소스 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete po,service,replicaset --all
+...
+```
+
+우리가 생성하지는 않았지만 엔드포인트가 만들어져 있습니다.
+
+이는 자동으로 트리거 되는 것이며 자동으로 서비스의 셀렉터를 사용하여 엔드포인트를 만든다는 것을 알수 있습니다.
+
+이번에는 엔드포인트를 수동으로 구성하면서 서비스 리소스를 생성해보겠습니다.
+
+설정 파일(`00012.yml`)파일을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: rs-endpoint
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: endpoint
+  template:
+    metadata:
+      labels:
+        app: endpoint
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: cont-endpoint
+        ports:
+        - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-endpoint
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+서비스 스팩을 자세히 보면 `selector`가 등록되어 있지 않습니다.
+
+`endpoints`생성을 위하여 먼저 두 오브젝트를 생성합니다.
+
+```sh
+# 설정 파일을 사용하여 오브젝트 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00012.yml
+replicaset.apps/rs-endpoint created
+service/svc-endpoint created
+
+# 생성한 오브젝트 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get replicaset,pods,service
+NAME                          DESIRED   CURRENT   READY   AGE
+replicaset.apps/rs-endpoint   3         3         3       16s
+
+NAME                    READY   STATUS    RESTARTS   AGE
+pod/rs-endpoint-dtfn9   1/1     Running   0          16s
+pod/rs-endpoint-mst8c   1/1     Running   0          16s
+pod/rs-endpoint-pw8qd   1/1     Running   0          16s
+
+NAME                   TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+service/kubernetes     ClusterIP   10.96.0.1      <none>        443/TCP   8m24s
+service/svc-endpoint   ClusterIP   10.109.10.72   <none>        80/TCP    16s
+
+# 서비스를 상세 조회
+# 엔드 포인트가 등록 되지 않는 것을 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe service svc-endpoint
+Name:              svc-endpoint
+Namespace:         default
+Labels:            <none>
+Annotations:       <none>
+Selector:          <none>
+Type:              ClusterIP
+IP Family Policy:  SingleStack
+IP Families:       IPv4
+IP:                10.109.10.72
+IPs:               10.109.10.72
+Port:              <unset>  80/TCP
+TargetPort:        8080/TCP
+Endpoints:         <none>
+Session Affinity:  None
+Events:            <none>
+
+# 엔드포인트를 생성하기 위하여 파드의 아이피를 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -o wide
+NAME                READY   STATUS    RESTARTS   AGE     IP           ...
+rs-endpoint-dtfn9   1/1     Running   0          9m47s   172.17.0.3   ...
+rs-endpoint-mst8c   1/1     Running   0          9m47s   172.17.0.4   ...
+rs-endpoint-pw8qd   1/1     Running   0          9m47s   172.17.0.5   ...
+```
+
+엔드포인트를 생성하기 위하여 설정파일(`00013.yml`)파일을 생성한 다음 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: svc-endpoint
+subsets:             # 아이피 셋을 구성
+- addresses:         # 아이피 주소를 등록
+  - ip: 172.17.0.3   # 셋 아이피를 등록(rs-endpoint-dtfn9)
+  - ip: 172.17.0.4   # 셋 아이피를 등록(rs-endpoint-mst8c)
+  ports:             # 서비스 연결을 위한 포트
+  - port: 8080       # 서비스 포트를 등록
+```
+
+`endpoint`를 등록할 때에는 서비스 명칭(`name`)과 동일하게 엔드포인트 명칭(`name`)을 등록하여야 연결이 됩니다.
+
+`endpoints`를 등록한 다음 `curl`을 통하여 테스트를 실시합니다.
+
+현재 `endpoints`는 `rs-endpoint-pw8qd`컨테이너가 등록 되어 있지 않으므로 `rs-endpoint-pw8qd`컨테이너를 요청을 처리할 수 없습니다.
+
+```sh
+# [endpoints]객체를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00013.yml
+endpoints/svc-endpoint created
+
+# [endpoints]가 서비스에 잘 등록 된것을 확인합니다
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe service svc-endpoint
+Name:              svc-endpoint
+Namespace:         default
+Labels:            <none>
+Annotations:       <none>
+Selector:          <none>
+Type:              ClusterIP
+IP Family Policy:  SingleStack
+IP Families:       IPv4
+IP:                10.109.10.72
+IPs:               10.109.10.72
+Port:              <unset>  80/TCP
+TargetPort:        8080/TCP
+Endpoints:         172.17.0.3:8080,172.17.0.4:8080
+Session Affinity:  None
+Events:            <none>
+
+# 엔드포인트를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe endpoints svc-endpoint
+Name:         svc-endpoint
+Namespace:    default
+Labels:       <none>
+Annotations:  <none>
+Subsets:
+  Addresses:          172.17.0.3,172.17.0.4
+  NotReadyAddresses:  <none>
+  Ports:
+    Name     Port  Protocol
+    ----     ----  --------
+    <unset>  8080  TCP
+
+Events:  <none>
+
+# curl 명령문을 사용하여 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it rs-endpoint-dtfn9 -- curl http://svc-endpoint
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   105    0   105    0     0  52500      0 --:--:-- --:--:-- --:--:-- 52500
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is rs-endpoint-mst8c"}
 
 
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it rs-endpoint-dtfn9 -- curl http://svc-endpoint
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   105    0   105    0     0   102k      0 --:--:-- --:--:-- --:--:--  102k
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is rs-endpoint-mst8c"}
 
+# 테스트가 끝난 오브젝트는 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete service,endpoints,replicaset,pods --all
+```
 
+#### ExternalName
+
+서비스타입을 다루면서 한가지 짚고 넘어 가지 않은 타입이 있습니다.
+
+실제 아이피를 할당하지 않으면서 외부의 `DNS`단에서 처리 되는 `ExternalName`입니다.
+
+이는 서비스를 추상화하여 외부 도메인과 연결시킵니다.
+
+가령 `github.com`과 같은 메인 도메인을 `github`와 같이 별칭을 주는 서비스 타입입니다.
+
+간단히 실습해 보면서 넘어 가겠습니다.
+
+설정 파일(`000014.yml`)을 생성한 다음 설정 값을 등록합니다.
+
+```yml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: rs-external-name
+spec:
+  selector:
+    matchLabels:
+      app: pod-external-name
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: pod-external-name
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: external-cont
+        ports:
+        - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-external-name
+spec:
+  type: ExternalName           # externalName 타입으로 등록
+  externalName: blog.yes24.com # 외부로 노출 될 CNAME을 등록
+  ports:                       # 외부로 노출 될 포트
+  - port: 80                   # 외부로 노출 될 포트를 등록
+```
+
+설정 파일을 사용하여 오브젝트를 생성 후 테스트를 진행합니다.
+
+```sh
+# 설정파일을 사용하여 오브젝트를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl apply -f assets/00002/00014.yml
+replicaset.apps/rs-external-name created
+service/svc-external-name created
+
+# 생성 된 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get po
+NAME                     READY   STATUS              RESTARTS   AGE
+rs-external-name-x2vfm   0/1     ContainerCreating   0          3s
+rs-external-name-zbwlg   1/1     Running             0          3s
+rs-external-name-zfmqd   0/1     ContainerCreating   0          3s
+
+# 서비스를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe service svc-external-name
+Name:              svc-external-name
+Namespace:         default
+Labels:            <none>
+Annotations:       <none>
+Selector:          <none>
+Type:              ExternalName
+IP Families:       <none>
+IP:
+IPs:               <none>
+External Name:     blog.yes24.com
+Port:              <unset>  80/TCP
+TargetPort:        80/TCP
+Endpoints:         <none>
+Session Affinity:  None
+Events:            <none>
+
+# 컨테이너에서 서비스를 사용하여 외부 요청
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it rs-external-name-x2vfm -- curl http://svc-external-name/blogmain
+...
+
+# 테스트가 끝난 오브젝트 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete pods,service,replicaset --all
+```
+
+### @TODO
+
+### daemonSet
+
+`replicasetionController`와 `replicaset`의 경우 `replicas`속성을 사용하여 노드의 파드 스캐줄링을 처리하였습니다.
+
+하지만 하나의 노드에 하나의 파드만을 실행해야 할 경우는 어떻게 해야 할까요?
+
+이번에 배울 `daemonSet`이 그 역활을 합니다.
+
+데몬셋은 원하는 노드를 선택하거나 레이블 셀렉터를 사용하여 정확히 하나 또는 노드당 하나라는 수식을 만들어낸다.
+
+그렇다면 설정파일(`00005.yml`)을 생성한 다음 설정값을 등록합니다.
+
+```yml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: daemonsets
+spec:
+  selector:
+    matchLabels:
+      app: daemonsets
+  template:
+    metadata:
+      name: daemonsets-pod
+      labels:
+        app: daemonsets
+    spec:
+      nodeSelector:      # 노드를 선택
+        os: centos       # 선택할 노드의 레이블을 등록
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: daemonset-cont
+        ports:
+        - containerPort: 8080
+```
+
+여기서 주의할 점은 `nodeSelector`에 있습니다.
+
+`daemonSet`은 노드를 선택하고 원하는 노드에 정확히 하나를 반영합니다.
+
+이 설정 파일을 사용하여 오브젝트를 생성합니다.
+
+```sh
+# 설정 파일을 사용하여 데몬셋을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00001.yml
+daemonset.apps/daemonsets created
+
+# 데몬셋이 파드를 잘 생성했는지 확인
+# 노드의 레이블이 [ os=centos ]로 선택하였으므로 생성 되지 않습니다.
+# 노드의 레이블을 수정한 다음 다시 조회 합니다.
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+No resources found in default namespace.
+
+# 미니쿠베에 레이블을 등록
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl label node minikube os=centos
+node/minikube labeled
+
+# 레이블이 잘 등록 되었는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get node -L=os
+NAME       STATUS   ROLES    AGE   VERSION   OS
+minikube   Ready    <none>   26h   v1.24.1   centos
+
+# 데몬셋이 원하는 노드에 배포하였는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -o wide
+NAME               READY   STATUS    RESTARTS   AGE   IP           NODE       ...
+daemonsets-6gdk9   1/1     Running   0          55s   172.17.0.3   minikube   ...
+
+# 노드의 레이블을 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl label node minikube os= --overwrite
+
+# 파드가 자동으로 삭제 되는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -o wide
+NAME               READY   STATUS        RESTARTS   AGE     IP           NODE       ...
+daemonsets-6gdk9   1/1     Terminating   0          2m53s   172.17.0.3   minikube   ...
+```
 
 ### deployments
 
-디플로이먼트는 레플리카셋을 관리하는 상위 오브젝트입니다.
+돌아가서 이전에는 레플리카셋을 사용하여 파드를 배포하였다면 이번에는 사용자에 친숙한 디플로이먼트를 사용해보도록 하겠습니다.
 
-배포를 위한 롤아웃(`rollout`)과 같은 파드와 레플리카셋의 오브젝트를 관리합니다.
+디플로이먼트는 레플리카셋을 관리하는 상위 오브젝트이며 기존에 레플리카셋의 기능을 계승하고 있습니다.
 
+또한 추가적으로 디플로이먼트는 배포를 위한 롤아웃(`rollout`)과 같은 파드와 레플리카셋의 오브젝트를 관리합니다.
 
+레플리카셋과 서비스 설정파일을 생성합니다.
+
+레플리카셋 설정은(`00002.yml`)파일입니다.
+
+서비스 설정은(`00003.yml`)파일입니다.
+
+```yml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: replicaset-deployments
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: replicaset-deployments
+      version: 1.0.0
+  template:
+    metadata:
+      labels:
+        app: replicaset-deployments
+        version: 1.0.0
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: replicaset-cont
+        ports:
+        - containerPort: 8080
+```
+
+서비스 설정 파일은 아래와 같습니다.
+
+```yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: replicaset-deployments-service
+spec:
+  selector:
+    app: replicaset-deployments
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+설정 파일을 사용하여 레플리카셋을 생성합니다.
+
+```sh
+# 설정 파일을 사용하여 서비스를 생성합니다.
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00003.yml
+service/replicaset-deployments-service created
+
+# 생성한 서비스를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get service replicaset-deployments-service
+NAME                             TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+replicaset-deployments-service   ClusterIP   10.104.250.140   <none>        80/TCP    3m17s
+
+# 설정 파일을 사용하여 레플리카셋을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00002.yml
+replicaset.apps/replicaset-deployments created
+
+# 레플리카셋으로 생성한 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -l 'app in (replicaset-deployments), version in (1.0.0)'
+NAME                           READY   STATUS    RESTARTS   AGE
+replicaset-deployments-622xx   1/1     Running   0          86s
+replicaset-deployments-jdw77   1/1     Running   0          86s
+replicaset-deployments-p8ch5   1/1     Running   0          86s
+
+# 엔드포인트를 조회
+$ kubectl describe endpoints replicaset-deployments-service
+Name:         replicaset-deployments-service
+Namespace:    default
+Labels:       <none>
+Annotations:  endpoints.kubernetes.io/last-change-trigger-time: 2022-10-05T07:40:28Z
+Subsets:
+  Addresses:          172.17.0.6,172.17.0.7,172.17.0.8
+  NotReadyAddresses:  <none>
+  Ports:
+    Name     Port  Protocol
+    ----     ----  --------
+    <unset>  8080  TCP
+
+Events:  <none>
+
+# 테스트 실행
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it replicaset-deployments-622xx -- curl http://10.104.250.140
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   116    0   116    0     0    110      0 --:--:--  0:00:01 --:--:--   110
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is replicaset-deployments-p8ch5"}
+```
+
+파드가 정상적으로 동작하는 것을 확인한 다음 버전 패치를 시작하겠습니다.
+
+버전 패치는 `node.js`파일을 수정하도록 하겠습니다.
+
+```js
+...
+
+//- 서비스 처리기를 생성한다.
+const serverProcessHandler = (req, res) => {
+
+    //- 전송할 데이터 셋팅
+    //- data에 (version-2)를 추가합니다.
+    var data = {
+        error_code    : 0, 
+        error_message : null, 
+        data          : 'Hello Kubernetes this is Container ID is '.concat(os.hostname()),
+        version       : 'beta'
+    }
+
+...
+```
+
+데이터의 `version-2` 항목을 추가하였습니다.
+
+도커 파일을 사용하여 빌드를 실행합니다.
+
+버전은 `1.0.2`로 지정합니다.
+
+```sh
+# 도커 파일을 빌드
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker build -t kim0lil/80700:v-1.0.2 assets/00003/00004
+
+# 도커 이미지 푸시
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker push kim0lil/80700:v-1.0.2
+```
+
+새로운 버전의 이미지가 생성 되었습니다.
+
+이 이미지 파일을 사용하여 배포를 진행해보도록 하겠습니다.
+
+먼저 레플리케이션 설정 파일(`00005.yml`)을 생성합니다.
+
+```yml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: replicaset-deployments
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: replicaset-deployments
+  template:
+    metadata:
+      labels:
+        app: replicaset-deployments
+        version: 1.0.2
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.2
+        name: replicaset-cont
+        ports:
+        - containerPort: 8080
+```
+
+현재 버전인 `1.0.0`에서 `1.0.2`버전으로 배포하는 방법은 두가지가 있습니다.
+
+첫번째 방법으로는 새로운 버전의 파드를 배포하기 위하여 기존의 파드를 삭제한 다음 새로운 파드를 생성합니다.
+
+![디플로이먼트-1](./imgs/00014.png)
+
+두 번째 방법으로는 새로운 버전의 파드와 삭제할 파드를 단계적으로 하나씩 지우고 생성하기를 반복합니다.
+
+![디플로이먼트-2](./imgs/00015.png)
+
+첫번째 배포 방법은 첫번째 파드 그룹과 두번째 파드 그룹이 변경 되면서 딜레이가 생긴다는 것입니다.
+
+첫번쨰 방법인 먼저 기본 `1.0.0` 파드를 삭제 후 `1.0.2` 를 생성하겠습니다.
+
+```sh
+# 1.0.0 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -l 'app in (replicaset-deployments), version in (1.0.0)' -L 'app,version'
+NAME                           READY   STATUS        RESTARTS   AGE    APP                      VERSION
+replicaset-deployments-622xx   1/1     Running       0          3m9s   replicaset-deployments   1.0.0
+replicaset-deployments-jdw77   1/1     Running       0          3m9s   replicaset-deployments   1.0.0
+replicaset-deployments-p8ch5   1/1     Running       0          3m9s   replicaset-deployments   1.0.0
+
+# 1.0.0 레플리카셋를 제거
+$ kubectl delete replicaset replicaset-deployments
+replicaset.apps "replicaset-deployments" deleted
+
+# 1.0.0의 파드가 삭제 되었는지 확인
+$ kubectl get pods -l 'app in (replicaset-deployments), version in (1.0.0)' -L 'app,version'
+NAME                           READY   STATUS        RESTARTS   AGE    APP                      VERSION
+replicaset-deployments-622xx   1/1     Terminating   0          5m9s   replicaset-deployments   1.0.0
+replicaset-deployments-jdw77   1/1     Terminating   0          5m9s   replicaset-deployments   1.0.0
+replicaset-deployments-p8ch5   1/1     Terminating   0          5m9s   replicaset-deployments   1.0.0
+
+# 1.0.2의 레플리카셋을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00005.yml
+replicaset.apps/replicaset-deployments created
+
+# 1.0.2의 레플리카셋 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$  kubectl get replicaset
+NAME                     DESIRED   CURRENT   READY   AGE
+replicaset-deployments   3         3         3       15s
+
+# 1.0.2의 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -l 'app in (replicaset-deployments), version in (1.0.2)' -L 'app,version'
+NAME                           READY   STATUS    RESTARTS   AGE   APP                      VERSION
+replicaset-deployments-54q4b   1/1     Running   0          30s   replicaset-deployments   1.0.2
+replicaset-deployments-7vt4h   1/1     Running   0          30s   replicaset-deployments   1.0.2
+replicaset-deployments-tnhlr   1/1     Running   0          30s   replicaset-deployments   1.0.2
+
+# 다음 테스트를 위하여 레플리카 셋을 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete replicaset --all
+replicaset.apps "replicaset-deployments" deleted
+```
+
+`1.0.0` 버전의 파드를 관리하는 레플리카 셋을 삭제 한 다음 `1.0.2`버전의 파드를 관리하는 레플리카 셋을 생성하였기 때문에 레플리카셋이 삭제 되는 시간동안 사용할 수 없는 딜레이가 발생합니다.
+
+이제 두번째 방법을 사용하여 처리해 보도록 하겠습니다.
+
+두 번째 방법을 사용하기 위해서는 두 버전을 모두 관리해야 하므로 새로운 이름의 레플리카셋을 생성해야 하므로 설정 파일(`000006.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: replicaset-deployments-v2    # 명칭만 변경
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: replicaset-deployments
+  template:
+    metadata:
+      labels:
+        app: replicaset-deployments
+        version: 1.0.2
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.2
+        name: replicaset-cont
+        ports:
+        - containerPort: 8080
+```
+
+업데이트할 `1.0.2`버전의 레플리카셋과 이전 `1.0.0` 버전의 레플리카셋을 사용하여 업데이트 실습을 진행하겠습니다.
+
+```sh
+# 1.0.0 버전의 파드를 관리하는 레플리카셋을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00002.yml
+replicaset.apps/replicaset-deployments created
+
+# 생성 된 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -l 'app in (replicaset-deployments), version in (1.0.0)' -L='app,version'
+NAME                           READY   STATUS    RESTARTS   AGE   APP                      VERSION
+replicaset-deployments-k54qj   1/1     Running   0          10m   replicaset-deployments   1.0.0
+replicaset-deployments-lz5jv   1/1     Running   0          10m   replicaset-deployments   1.0.0
+replicaset-deployments-tdjs5   1/1     Running   0          10m   replicaset-deployments   1.0.0
+
+# 1.0.0버전의 파드 테스트 실행
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it replicaset-deployments-k54qj -- curl http://replicaset-deployments-service
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   116    0   116    0     0     37      0 --:--:--  0:00:03 --:--:--    37
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is replicaset-deployments-lz5jv"}
+
+# 1.0.0 버전의 파드는 그대로 두고 1.0.2의 파드를 관리할 레플리카 셋 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00006.yml
+replicaset.apps/replicaset-deployments-v2 created
+
+# 생성 된 1.0.0의 파드와 1.0.2의 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -l 'app in (replicaset-deployments), version in (1.0.0,1.0.2)' -L='app,version'
+NAME                              READY   STATUS    RESTARTS   AGE   APP                      VERSION
+replicaset-deployments-k54qj      1/1     Running   0          12m   replicaset-deployments   1.0.0
+replicaset-deployments-lz5jv      1/1     Running   0          12m   replicaset-deployments   1.0.0
+replicaset-deployments-tdjs5      1/1     Running   0          12m   replicaset-deployments   1.0.0
+replicaset-deployments-v2-6bhj5   1/1     Running   0          25s   replicaset-deployments   1.0.2
+replicaset-deployments-v2-8c8vs   1/1     Running   0          25s   replicaset-deployments   1.0.2
+replicaset-deployments-v2-gql4r   1/1     Running   0          25s   replicaset-deployments   1.0.2
+
+# 파드 테스트 실행
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it replicaset-deployments-k54qj -- curl http://replicaset-deployments-service
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   116    0   116    0     0     37      0 --:--:--  0:00:03 --:--:--    37
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is replicaset-deployments-lz5jv"}
+
+...
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it replicaset-deployments-k54qj -- curl http://replicaset-deployments-service
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   136    0   136    0     0  22666      0 --:--:-- --:--:-- --:--:-- 22666
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is replicaset-deployments-v2-6bhj5","version":"beta"}
+
+# 1.0.0 버전의 레플리카 셋 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete replicaset replicaset-deployments
+replicaset.apps "replicaset-deployments" deleted
+
+# 1.0.0 버전의 파드가 삭제(Terminating) 되었는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -l 'app in (replicaset-deployments), version in (1.0.0,1.0.2)' -L='app,version'
+NAME                              READY   STATUS        RESTARTS   AGE     APP                      VERSION
+replicaset-deployments-k54qj      1/1     Terminating   0          46m     replicaset-deployments   1.0.0
+replicaset-deployments-lz5jv      1/1     Terminating   0          46m     replicaset-deployments   1.0.0
+replicaset-deployments-tdjs5      1/1     Terminating   0          46m     replicaset-deployments   1.0.0
+replicaset-deployments-v2-6bhj5   1/1     Running       0          3m42s   replicaset-deployments   1.0.2
+replicaset-deployments-v2-8c8vs   1/1     Running       0          3m42s   replicaset-deployments   1.0.2
+replicaset-deployments-v2-gql4r   1/1     Running       0          3m42s   replicaset-deployments   1.0.2
+
+# 1.0.2 버전의 파드가 계속 동작하는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it replicaset-deployments-v2-6bhj5 -- curl http://replicaset-deployments-service
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   136    0   136    0     0  19428      0 --:--:-- --:--:-- --:--:-- 19428
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is replicaset-deployments-v2-gql4r","version":"beta"}
+
+# 테스트가 끝난 객체를 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete replicaset,svc --all
+replicaset.apps "replicaset-deployments-v2" deleted
+service "replicaset-deployments-service" deleted
+```
+
+두번째 방법을 사용할 경우에는 애플리케이션이 중단되지 않는 무중단 상태에서의 배포가 가능합니다.
+
+하지만 이 방법을 사용할 경우 애플리케이션을 관리할 레플리카셋이 하나 더 등록 되어 있어야 하며 사용자가 사용하고 있기 때문에 새로운 버전과 이전 버전의 수정사항이 클 경우 올바르지 않는 결과를 발생시킬 수 있습니다.
+
+그렇지 않을 경우 무중단 상태의 배포는 하나의 페러다임일 것입니다.
+
+쿠버네티스에서는 이러한 배포를 자동으로 처리하는 객체를 `Deployments`를 사용하여 처리할 수 있습니다.
+
+먼저 설정 파일(`00007.yml`)을 생성한 다음 설정값을 등록합니다.
+
+```yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment
+spec:
+  minReadySeconds: 10 # 디플로이먼트 컨테이너 시작 시간을 5초간 딜레이 후 시작한다.
+  replicas: 3
+  selector:
+    matchLabels:
+      app: node
+  template:
+    metadata:
+      labels:
+        app: node
+    spec:
+      containers:
+      - name: node
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: deployment-service
+spec:
+  type: ClusterIP
+  selector:
+    app: node
+  ports:
+    port: 80
+    targetPort: 8080
+```
+
+등록한 설정 파일을 사용하여 쿠버네티스의 객체를 생성하고 파드를 관리해도록 처리해 보겠습니다.
+
+디플로이먼트를 생성할 경우 디플로이먼트가 생성한 레플리카셋과 레플리카셋이 생성한 파드를 조회할 수 있습니다.
+
+```sh
+# 설정 파일을 사용하여 디플로이먼트 객체를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00007.yml
+deployment.apps/deployment created
+service/deployment-service created
+
+# 디플로이먼트가 자동으로 생성한 레플리카셋 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get replicaset -L='app'
+NAME                    DESIRED   CURRENT   READY   AGE   APP
+deployment-6d856d86d9   3         3         3       13s   node
+
+# 레플리카셋이 자동으로 생성한 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -L='app'
+NAME                          READY   STATUS    RESTARTS   AGE    APP
+deployment-6d856d86d9-4xltw   1/1     Running   0          18s   node
+deployment-6d856d86d9-t9s8c   1/1     Running   0          18s   node
+deployment-6d856d86d9-xjdp6   1/1     Running   0          18s   node
+```
+
+디플로이먼트를 사용하면  기존 레플리카셋을 사용하듯이 스케일업이 가능합니다.
+
+```sh
+# 디플로이먼트의 스케일을 [3]에서 [4]로 업
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl scale deployment/deployment --replicas=4
+deployment.apps/deployment scaled
+
+# 업데이트 된 디플로이먼트 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get deployment
+NAME         READY   UP-TO-DATE   AVAILABLE   AGE
+deployment   4/4     4            4           11m
+
+# 업데이트 된 레플리카셋 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get replicaset
+NAME                    DESIRED   CURRENT   READY   AGE
+deployment-6d856d86d9   4         4         4       68s
+
+# 파드의 개수가 [3]에서 [4]로 업데이트 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                          READY   STATUS    RESTARTS   AGE
+deployment-6d856d86d9-4xltw   1/1     Running   0          84s
+deployment-6d856d86d9-64cdb   1/1     Running   0          27s
+deployment-6d856d86d9-t9s8c   1/1     Running   0          84s
+deployment-6d856d86d9-xjdp6   1/1     Running   0          84s
+
+# 파드 테스트를 실행
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it deployment-6d856d86d9-xjdp6 -- curl http://deployment-service
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   115    0   115    0     0   7666      0 --:--:-- --:--:-- --:--:--  7666
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is deployment-6d856d86d9-t9s8c"}
+
+# 디플로이먼트의 스케일 다운 실행
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl scale deployment/deployment --replicas=3
+deployment.apps/deployment scaled
+
+# 파드의 개수가 [4]에서 [3]로 업데이트 확인 ( 1개의 파드가 Terminating )
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                          READY   STATUS        RESTARTS   AGE
+deployment-6d856d86d9-4xltw   1/1     Running       0          3m20s
+deployment-6d856d86d9-64cdb   1/1     Terminating   0          2m23s
+deployment-6d856d86d9-t9s8c   1/1     Running       0          3m20s
+deployment-6d856d86d9-xjdp6   1/1     Running       0          3m20s
+
+# 파드 테스트를 실행
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it deployment-6d856d86d9-xjdp6 -- curl http://deployment-service
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   115    0   115    0     0    113      0 --:--:--  0:00:01 --:--:--   113
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is deployment-6d856d86d9-4xltw"}
+
+# 테스트가 끝난 서비스와 디플로이먼트 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete deployment,service --all
+```
+
+디플로이먼트를 사용하여 스케일업과 스케일 다운을 실습해보았습니다.
+
+이번에는 버전업데이트를 위한 롤아웃을 실습해 보겠습니다.
+
+버전은 이전과 동일하게 `1.0.0`에서 `1.0.2`버전으로 업데이트 하겠습니다.
+
+```sh
+# 디플로이먼트 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00007.yml
+deployment.apps/deployment created
+service/deployment-service created
+
+# 실행중인 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                          READY   STATUS    RESTARTS   AGE
+deployment-6d856d86d9-ckvcx   1/1     Running   0          25s
+deployment-6d856d86d9-jshqr   1/1     Running   0          25s
+deployment-6d856d86d9-xqwrp   1/1     Running   0          25s
+
+# 이미지를 1.0.0에서 1.0.2 버전으로 업데이트
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl set image deployment/deployment node='kim0lil/80700:v-1.0.2'
+deployment.apps/deployment image updated
+
+# 레플리카셋의 쌍을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get replicaset
+NAME                    DESIRED   CURRENT   READY   AGE
+deployment-5844b4b99f   1         1         1       4s
+deployment-6d856d86d9   3         3         3       43s
+
+# 파드의 업데이트를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                          READY   STATUS        RESTARTS   AGE
+deployment-5844b4b99f-6mtm5   1/1     Running       0          2s
+deployment-5844b4b99f-bhwcx   1/1     Running       0          14s
+deployment-6d856d86d9-ckvcx   1/1     Running       0          53s
+deployment-6d856d86d9-jshqr   1/1     Running       0          53s
+deployment-6d856d86d9-xqwrp   1/1     Terminating   0          53s
+
+# 업데이트 되고 있는 디플로이먼트 상태를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe deployment/deployment
+Name:                   deployment
+...
+Replicas:               3 desired | 3 updated | 4 total | 3 available | 1 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        10
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+...
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      True    MinimumReplicasAvailable
+  Progressing    True    ReplicaSetUpdated
+OldReplicaSets:  deployment-6d856d86d9 (1/1 replicas created)
+NewReplicaSet:   deployment-5844b4b99f (3/3 replicas created)
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  71s   deployment-controller  Scaled up replica set deployment-6d856d86d9 to 3
+  Normal  ScalingReplicaSet  32s   deployment-controller  Scaled up replica set deployment-5844b4b99f to 1
+  Normal  ScalingReplicaSet  20s   deployment-controller  Scaled down replica set deployment-6d856d86d9 to 2
+  Normal  ScalingReplicaSet  20s   deployment-controller  Scaled up replica set deployment-5844b4b99f to 2
+  Normal  ScalingReplicaSet  8s    deployment-controller  Scaled down replica set deployment-6d856d86d9 to 1
+  Normal  ScalingReplicaSet  8s    deployment-controller  Scaled up replica set deployment-5844b4b99f to 3
+
+# 업데이트가 완료 된 후 디플로이먼트 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe deployment/deployment
+Name:                   deployment
+...
+Replicas:               3 desired | 3 updated | 3 total | 3 available | 0 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        10
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+...
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      True    MinimumReplicasAvailable
+  Progressing    True    NewReplicaSetAvailable
+OldReplicaSets:  <none>
+NewReplicaSet:   deployment-5844b4b99f (3/3 replicas created)
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  80s   deployment-controller  Scaled up replica set deployment-6d856d86d9 to 3
+  Normal  ScalingReplicaSet  41s   deployment-controller  Scaled up replica set deployment-5844b4b99f to 1
+  Normal  ScalingReplicaSet  29s   deployment-controller  Scaled down replica set deployment-6d856d86d9 to 2
+  Normal  ScalingReplicaSet  29s   deployment-controller  Scaled up replica set deployment-5844b4b99f to 2
+  Normal  ScalingReplicaSet  17s   deployment-controller  Scaled down replica set deployment-6d856d86d9 to 1
+  Normal  ScalingReplicaSet  17s   deployment-controller  Scaled up replica set deployment-5844b4b99f to 3
+  Normal  ScalingReplicaSet  5s    deployment-controller  Scaled down replica set deployment-6d856d86d9 to 0
+
+# 테스트가 끝난 서비스와 디플로이먼트를 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete service,deployment --all
+service "deployment-service" deleted
+service "kubernetes" deleted
+deployment.apps "deployment" deleted
 
 ```
-### kubectl create deploy hello-deploy --port=8080 --image='kim0lil/80700:v-1.0.0' --replicas=3 --selector='app=node'
-### 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
 
-## 서비스
+`describe`를 확인해 보면 `6d856d86d9`의 레플리카 셋과 `5844b4b99f`의 레플리카셋이 순차적으로 하나씩 생성과 소멸을 반복하고 있는 것을 확인할 수 있습니다.
+
+이러한 방식을 `롤링 업데이트(RollingUpdate)`방식입니다.
+
+그 외에도 전체를 제거한 다음 다시 생성하는 `리크리케이트(Recreate)`방식이 있습니다.
+
+리크리에이트 방식을 실습해 보겠습니다.
+
+새로운 설정 파일(`00008.yml`)을 생성한 다음 아래 설정 값을 입력합니다.
+
+```yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment
+spec:
+  strategy: 
+    type: Recreate  # 최초 하나의 파드가 생성 된 다음 기본 레플리카셋의 모든 파드를 제거
+  minReadySeconds: 10
+  replicas: 5
+  selector:
+    matchLabels:
+      app: node
+  template:
+    metadata:
+      labels:
+        app: node
+    spec:
+      containers:
+      - name: node
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: deployment-service
+spec:
+  type: ClusterIP
+  selector:
+    app: node
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+리크리에이션을 실습해 보도록 하겠습니다.
+
+레플리카셋의 파드수량을 5개로 지정하여 생성한 다음 `1.0.0`버전에서 `1.0.2`버전으로 업데이트를 진행합니다.
+
+```sh
+# 설정 파일을 사용하여 디플로이먼트와 서비스를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00008.yml
+deployment.apps/deployment created
+service/deployment-service created
+
+# 디플로이먼트 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get deployment
+NAME         READY   UP-TO-DATE   AVAILABLE   AGE
+deployment   5/5     5            0           4s
+
+# 레플리카셋 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get replicaset
+NAME                    DESIRED   CURRENT   READY   AGE
+deployment-6d856d86d9   5         5         5       25s
+
+# 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                          READY   STATUS    RESTARTS   AGEE
+deployment-6d856d86d9-4vt2z   1/1     Running   0          35s
+deployment-6d856d86d9-5cntk   1/1     Running   0          35s
+deployment-6d856d86d9-8d98p   1/1     Running   0          35s
+deployment-6d856d86d9-lq6qd   1/1     Running   0          35s
+deployment-6d856d86d9-zfkqg   1/1     Running   0          35s
+
+# 디플로이먼트의 버전을 '1.0.2'로 업데이트
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl set image deployment/deployment node='kim0lil/80700:v-1.0.2'
+deployment.apps/deployment image updated
+
+# 모든 레플리카셋을 즉시 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get replicaset
+NAME                    DESIRED   CURRENT   READY   AGE
+deployment-6d856d86d9   0         0         0       2m41s
+
+# 모드 파드를 즉시 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                          READY   STATUS        RESTARTS   AGE
+deployment-6d856d86d9-4vt2z   1/1     Terminating   0          2m51s
+deployment-6d856d86d9-5cntk   1/1     Terminating   0          2m51s
+deployment-6d856d86d9-8d98p   1/1     Terminating   0          2m51s
+deployment-6d856d86d9-lq6qd   1/1     Terminating   0          2m51s
+deployment-6d856d86d9-zfkqg   1/1     Terminating   0          2m51s
+
+# 이전 레플리카 셋(6d856d86d9)의 스케일을 0으로 즉시 변경하여 삭제 한 다음
+# 새로운 레플리카 셋(5844b4b99f)의 스케일을 5로 변경하여 삭제 후 생성
+admin@jinhyeok MINGW64 ~/dev/80700/bin (master)
+$ kubectl describe deployment/deployment
+Name:               deployment
+Namespace:          default
+CreationTimestamp:  Sat, 08 Oct 2022 17:00:08 +0900
+Labels:             <none>
+Annotations:        deployment.kubernetes.io/revision: 2
+Selector:           app=node
+Replicas:           5 desired | 5 updated | 5 total | 2 available | 3 unavailable
+StrategyType:       Recreate
+MinReadySeconds:    10
+...
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      False   MinimumReplicasUnavailable
+  Progressing    True    ReplicaSetUpdated
+OldReplicaSets:  <none>
+NewReplicaSet:   deployment-5844b4b99f (5/5 replicas created)
+Events:
+  Type    Reason             Age    From                   Message
+  ----    ------             ----   ----                   -------
+  Normal  ScalingReplicaSet  3m26s  deployment-controller  Scaled up replica set deployment-6d856d86d9 to 5
+  Normal  ScalingReplicaSet  50s    deployment-controller  Scaled down replica set deployment-6d856d86d9 to 0
+  Normal  ScalingReplicaSet  18s    deployment-controller  Scaled up replica set deployment-5844b4b99f to 5
+
+# 테스트가 끝난 디플로이먼트와 서비스를 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete deployment,service --all
+service "kubernetes" deleted
+service "replicaset-deployments-service" deleted
+```
+
+디플로이먼트의 유용함은 이것만이 아닙니다.
+
+디플로이먼트는 서버상에서 실행 되며 선언적 트랜잭션을 사용하용하므로 언제든지 원하면 이전 버전으로의 버전의 이동이 가능합니다.
+
+버전이 이동 할 경우 `Annotations`의 `revision`을 기록하며 `labels`값을 사용하여 파드와 레플리카셋을 처리할 것입니다.
+
+먼저 설정 파일(`00009.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment
+  annotations:           # 히스토리를 생성하기 위하여 어노테이션 레이블을 등록
+    kubernetes.io/change-cause: application create version 1.0.0
+spec:
+  strategy: 
+    type: RollingUpdate # 업데이트 타입을 롤링 업데이트(순차적 처리)로 등록
+  minReadySeconds: 10
+  replicas: 5
+  selector:
+    matchLabels:
+      app: node
+  template:
+    metadata:
+      labels:
+        app: node
+    spec:
+      containers:
+      - name: node
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: deployment-service
+spec:
+  type: ClusterIP
+  selector:
+    app: node
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+실습을 위하여 `livenessProbe`의 기능에서 탈락하는 이미지 컨테이너를 생성합니다.
+
+먼저 `app.js`파일을 생성한 다음 아래 오류가 있는 소스를 등록합니다.
+
+```js
+const http = require('http');
+const os   = require('os');
+const port = 8080;
+
+const serverProcessHandler = (req, res) => {
+
+    //- [healthy] 요청을 사용하여 컨테이너의 오류를 발생
+    if ( req.url == '/healthy' )
+    {
+        //- 전송할 데이터 셋팅    
+        var data = {
+            ServerTime : new Date()
+        }
+        
+        res.writeHead(404, {'Content-Type': 'application/json'});
+        res.end();
+    }
+
+    var data = {
+        error_code    : 0, 
+        error_message : null, 
+        data          : 'Hello Kubernetes this is Container ID is '.concat(os.hostname()),
+        version       : 'beta'
+    }
+
+    res.writeHead(200, {'Content-Type': 'application/json'});
+
+    res.end(JSON.stringify(data));
+} 
+
+const serverOpenHandler = function() {
+
+    console.log(`server is running at http://127.0.0.1:${port}`);
+}
+
+const www = http.createServer(serverProcessHandler);
+
+www.listen(port, serverOpenHandler);
+```
+
+생성한 서비스 파일을 이미지로 묶어 서버로 올리겠습니다.
+
+```sh
+# 도커 이미지를 빌드합니다.
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker build -t kim0lil/80700:v-1.0.4 -f assets/00003/00010/Dockerfile assets/00003/00010
+...
+# 도커 이미지를 서버로 푸시합니다.
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker push kim0lil/80700:v-1.0.4
+The push refers to repository [docker.io/kim0lil/80700]
+```
+
+본격적으로 실습을 통하여 쿠버네티스에서의 선언적 버전 업데이트를 어떻게 하는지 확인해 보도록 하겠습니다.
+
+```sh
+# 디플로이먼트와 서비스를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00009.yml
+deployment.apps/deployment created
+service/deployment-service created
+
+# 디플로이먼트, 레플리카셋, 파드 레이블과 함게 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get deployment,replicaset,pods --show-labels=true
+NAME                         READY   UP-TO-DATE   AVAILABLE   AGE   LABELS
+deployment.apps/deployment   5/5     5            5           95s   <none>
+
+NAME                                    DESIRED   CURRENT   READY   AGE   LABELS
+replicaset.apps/deployment-5b7db75bf8   5         5         5       95s   app=node,pod-template-hash=5b7db75bf8
+
+NAME                              READY   STATUS    RESTARTS   AGE   LABELS
+pod/deployment-5b7db75bf8-6nc49   1/1     Running   0          95s   app=node,pod-template-hash=5b7db75bf8
+pod/deployment-5b7db75bf8-hdq5p   1/1     Running   0          95s   app=node,pod-template-hash=5b7db75bf8
+pod/deployment-5b7db75bf8-k8wqg   1/1     Running   0          95s   app=node,pod-template-hash=5b7db75bf8
+pod/deployment-5b7db75bf8-r5xqf   1/1     Running   0          95s   app=node,pod-template-hash=5b7db75bf8
+pod/deployment-5b7db75bf8-rcnzb   1/1     Running   0          95s   app=node,pod-template-hash=5b7db75bf8
+
+
+# 디플로이먼트를 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe deployment/deployment
+Name:                   deployment
+Namespace:              default
+CreationTimestamp:      Sun, 09 Oct 2022 14:28:47 +0900
+Labels:                 <none>
+Annotations:            deployment.kubernetes.io/revision: 1
+                        kubernetes.io/change-cause: application create version 1.0.0
+Selector:               app=node
+Replicas:               5 desired | 5 updated | 5 total | 5 available | 0 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        10
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+Pod Template:
+  Labels:  app=node
+  Containers:
+   node:
+    Image:        kim0lil/80700:v-1.0.0
+    Port:         8080/TCP
+    Host Port:    0/TCP
+    Liveness:     http-get http://:8080/healthy delay=0s timeout=1s period=10s #success=1 #failure=3
+    Environment:  <none>
+    Mounts:       <none>
+  Volumes:        <none>
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      True    MinimumReplicasAvailable
+  Progressing    True    NewReplicaSetAvailable
+OldReplicaSets:  <none>
+NewReplicaSet:   deployment-5b7db75bf8 (5/5 replicas created)
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  3m    deployment-controller  Scaled up replica set deployment-5b7db75bf8 to 5
+
+# 디플로이먼트의 이미지를 [1.0.0]에서 [1.0.2]로 업데이트
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl set image deployment/deployment node="kim0lil/80700:v-1.0.2"
+deployment.apps/deployment image updated
+
+# 1분 가량의 시간이 지난 다음 디플로이먼트 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe deployment/deployment
+Name:                   deployment
+Namespace:              default
+CreationTimestamp:      Sun, 09 Oct 2022 14:28:47 +0900
+Labels:                 <none>
+Annotations:            deployment.kubernetes.io/revision: 2
+                        kubernetes.io/change-cause: application create version 1.0.0
+Selector:               app=node
+Replicas:               5 desired | 5 updated | 5 total | 5 available | 0 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        10
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+Pod Template:
+  Labels:  app=node
+  Containers:
+   node:
+    Image:        kim0lil/80700:v-1.0.2
+    Port:         8080/TCP
+    Host Port:    0/TCP
+    Liveness:     http-get http://:8080/healthy delay=0s timeout=1s period=10s #success=1 #failure=3
+    Environment:  <none>
+    Mounts:       <none>
+  Volumes:        <none>
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      True    MinimumReplicasAvailable
+  Progressing    True    NewReplicaSetAvailable
+OldReplicaSets:  <none>
+NewReplicaSet:   deployment-84d66c48b4 (5/5 replicas created)
+Events:
+  Type    Reason             Age    From                   Message
+  ----    ------             ----   ----                   -------
+  Normal  ScalingReplicaSet  3m43s  deployment-controller  Scaled up replica set deployment-5b7db75bf8 to 5
+  Normal  ScalingReplicaSet  28s    deployment-controller  Scaled up replica set deployment-84d66c48b4 to 2
+  Normal  ScalingReplicaSet  28s    deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 4
+  Normal  ScalingReplicaSet  28s    deployment-controller  Scaled up replica set deployment-84d66c48b4 to 3
+  Normal  ScalingReplicaSet  14s    deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 1
+  Normal  ScalingReplicaSet  14s    deployment-controller  Scaled up replica set deployment-84d66c48b4 to 5
+  Normal  ScalingReplicaSet  1s     deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 0
+
+# 버전 업데이트 여부 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl rollout status deployment/deployment
+deployment "deployment" successfully rolled out
+
+# 1.0.2버전의 레이블 등록
+$ kubectl annotate deployment/deployment kubernetes.io/change-cause="bugfix version 1.0.0 to 1.0.2"
+deployment.apps/deployment annotated
+
+# 신규 버전의 레이블 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl rollout history deployment/deployment
+deployment.apps/deployment
+REVISION  CHANGE-CAUSE
+1         application create version 1.0.0
+2         bugfix version 1.0.0 to 1.0.2
+
+# 에러를 발생 시키기 위하여 디플로이먼트의 이미지를 [1.0.4] 버전으로 업데이트
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl set image deployment/deployment node="kim0lil/80700:v-1.0.4"
+deployment.apps/deployment image updated
+
+$ kubectl annotate deployment/deployment kubernetes.io/change-cause="hotfix version 1.0.2 to 1.0.4"
+deployment.apps/deployment annotated
+
+# 1분 가량의 시간이 지난 다음 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                          READY   STATUS             RESTARTS        AGE
+deployment-7cff6f9b94-69t45   0/1     CrashLoopBackOff   2 (43s ago)     1m13s
+deployment-7cff6f9b94-mlf9l   0/1     CrashLoopBackOff   2 (43s ago)     1m13s
+deployment-7cff6f9b94-trgs6   0/1     CrashLoopBackOff   2 (24s ago)     1m34s
+deployment-7cff6f9b94-whw9j   0/1     CrashLoopBackOff   2 (14s ago)     1m34s
+deployment-7cff6f9b94-zkhzj   0/1     CrashLoopBackOff   2 (14s ago)     1m34s
+deployment-84d66c48b4-7nrpr   1/1     Running            0               4m15s
+deployment-84d66c48b4-cc496   1/1     Running            0               4m15s
+
+# livenessProbe에서 배드 시그널 확인
+# [RollingUpdateStrategy] 속성 값을 다음에 다를 것이므로 25%로 되어 있는지 확인
+# 25%로 되어 있기 때문에 [2]개의 파드가 남아서 서비스를 운영 가능
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe deployment/deployment
+Name:                   deployment
+Namespace:              default
+CreationTimestamp:      Sun, 09 Oct 2022 14:28:47 +0900
+Labels:                 <none>
+Annotations:            deployment.kubernetes.io/revision: 3
+                        kubernetes.io/change-cause: hotfix version 1.0.2 to 1.0.4
+Selector:               app=node
+Replicas:               5 desired | 5 updated | 7 total | 2 available | 5 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        10
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+Pod Template:
+  Labels:  app=node
+  Containers:
+   node:
+    Image:        kim0lil/80700:v-1.0.4
+    Port:         8080/TCP
+    Host Port:    0/TCP
+    Liveness:     http-get http://:8080/healthy delay=0s timeout=1s period=10s #success=1 #failure=3
+    Environment:  <none>
+    Mounts:       <none>
+  Volumes:        <none>
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      False   MinimumReplicasUnavailable
+  Progressing    True    ReplicaSetUpdated
+OldReplicaSets:  deployment-84d66c48b4 (2/2 replicas created)
+NewReplicaSet:   deployment-7cff6f9b94 (5/5 replicas created)
+Events:
+  Type    Reason             Age                    From                   Message
+  ----    ------             ----                   ----                   -------
+  Normal  ScalingReplicaSet  14m                    deployment-controller  Scaled up replica set deployment-5b7db75bf8 to 5
+  Normal  ScalingReplicaSet  10m                    deployment-controller  Scaled up replica set deployment-84d66c48b4 to 2
+  Normal  ScalingReplicaSet  10m                    deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 4
+  Normal  ScalingReplicaSet  10m                    deployment-controller  Scaled up replica set deployment-84d66c48b4 to 3
+  Normal  ScalingReplicaSet  10m                    deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 1
+  Normal  ScalingReplicaSet  10m                    deployment-controller  Scaled up replica set deployment-84d66c48b4 to 5
+  Normal  ScalingReplicaSet  10m                    deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 0
+  Normal  ScalingReplicaSet  8m58s                  deployment-controller  Scaled up replica set deployment-7cff6f9b94 to 2
+  Normal  ScalingReplicaSet  8m58s                  deployment-controller  Scaled down replica set deployment-84d66c48b4 to 4
+  Normal  ScalingReplicaSet  8m37s (x3 over 8m58s)  deployment-controller  (combined from similar events): Scaled up replica set deployment-7cff6f9b94 to 5
+
+# 버전 업데이트 히스토리를 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl rollout history deployment/deployment
+deployment.apps/deployment
+REVISION  CHANGE-CAUSE
+1         application create version 1.0.0
+2         bugfix version 1.0.0 to 1.0.2
+3         hotfix version 1.0.2 to 1.0.4
+
+# 버전 업데이트(rollout) 상태를 확인
+$ kubectl rollout status deployment/deployment
+Waiting for deployment "deployment" rollout to finish: 2 old replicas are pending termination...
+
+# 1.0.4 버전은 정상 동작 하지 않으므로 이전 버전으로 롤백 처리
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl rollout undo deployment/deployment
+deployment.apps/deployment rolled back
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                          READY   STATUS    RESTARTS   AGE
+deployment-84d66c48b4-45v4c   1/1     Running   0          63s
+deployment-84d66c48b4-7nrpr   1/1     Running   0          20m
+deployment-84d66c48b4-cc496   1/1     Running   0          20m
+deployment-84d66c48b4-h7b2l   1/1     Running   0          63s
+deployment-84d66c48b4-q6br6   1/1     Running   0          63s
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe deployment/deployment
+Name:                   deployment
+Namespace:              default
+CreationTimestamp:      Sun, 09 Oct 2022 14:28:47 +0900
+Labels:                 <none>
+Annotations:            deployment.kubernetes.io/revision: 4
+                        kubernetes.io/change-cause: bugfix version 1.0.0 to 1.0.2
+Selector:               app=node
+Replicas:               5 desired | 5 updated | 5 total | 5 available | 0 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        10
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+Pod Template:
+  Labels:  app=node
+  Containers:
+   node:
+    Image:        kim0lil/80700:v-1.0.2
+    Port:         8080/TCP
+    Host Port:    0/TCP
+    Liveness:     http-get http://:8080/healthy delay=0s timeout=1s period=10s #success=1 #failure=3
+    Environment:  <none>
+    Mounts:       <none>
+  Volumes:        <none>
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      True    MinimumReplicasAvailable
+  Progressing    True    NewReplicaSetAvailable
+OldReplicaSets:  <none>
+NewReplicaSet:   deployment-84d66c48b4 (5/5 replicas created)
+Events:
+  Type    Reason             Age                From                   Message
+  ----    ------             ----               ----                   -------
+  Normal  ScalingReplicaSet  24m                deployment-controller  Scaled up replica set deployment-5b7db75bf8 to 5
+  Normal  ScalingReplicaSet  20m                deployment-controller  Scaled up replica set deployment-84d66c48b4 to 2
+  Normal  ScalingReplicaSet  20m                deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 4
+  Normal  ScalingReplicaSet  20m                deployment-controller  Scaled up replica set deployment-84d66c48b4 to 3
+  Normal  ScalingReplicaSet  20m                deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 1
+  Normal  ScalingReplicaSet  20m                deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 0
+  Normal  ScalingReplicaSet  18m                deployment-controller  Scaled up replica set deployment-7cff6f9b94 to 2
+  Normal  ScalingReplicaSet  18m                deployment-controller  Scaled down replica set deployment-84d66c48b4 to 4
+  Normal  ScalingReplicaSet  18m (x3 over 18m)  deployment-controller  (combined from similar events): Scaled up replica set deployment-7cff6f9b94 to 5
+  Normal  ScalingReplicaSet  99s (x2 over 20m)  deployment-controller  Scaled up replica set deployment-84d66c48b4 to 5
+  Normal  ScalingReplicaSet  99s                deployment-controller  Scaled down replica set deployment-7cff6f9b94 to 2
+  Normal  ScalingReplicaSet  85s                deployment-controller  Scaled down replica set deployment-7cff6f9b94 to 0
+
+# 버전 업데이트 상태 확인
+$ kubectl rollout history deployment/deployment
+deployment.apps/deployment
+REVISION  CHANGE-CAUSE
+1         application create version 1.0.0
+3         hotfix version 1.0.2 to 1.0.4
+4         bugfix version 1.0.0 to 1.0.2
+
+# 테스트를 위하여 파드와 서비스 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods,service
+NAME                              READY   STATUS    RESTARTS   AGE
+pod/deployment-84d66c48b4-45v4c   1/1     Running   0          3m35s
+pod/deployment-84d66c48b4-7nrpr   1/1     Running   0          22m
+pod/deployment-84d66c48b4-cc496   1/1     Running   0          22m
+pod/deployment-84d66c48b4-h7b2l   1/1     Running   0          3m35s
+pod/deployment-84d66c48b4-q6br6   1/1     Running   0          3m35s
+
+NAME                         TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+service/deployment-service   ClusterIP   10.101.9.196   <none>        80/TCP    26m
+service/kubernetes           ClusterIP   10.96.0.1      <none>        443/TCP   26m
+
+# 테스트 시행 (1.0.2) 요청을 처리하는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod/deployment-84d66c48b4-q6br6 -- curl http://deployment-service
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   132    0   132    0     0   128k      0 --:--:-- --:--:-- --:--:--  128k
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is deployment-84d66c48b4-45v4c","version":"beta"}
+
+# 업데이트 버전 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl rollout history deployment/deployment
+deployment.apps/deployment
+REVISION  CHANGE-CAUSE
+1         application create version 1.0.0
+3         hotfix version 1.0.2 to 1.0.4
+4         bugfix version 1.0.0 to 1.0.2
+
+# [1.0.0] 버전으로 롤백
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl rollout undo deployment/deployment --to-revision=1
+deployment.apps/deployment rolled back
+
+# 디플로이먼트 상세 조회 [1.0.2] 버전에서 [1.0.0]버전으로 업데이트 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe deployment/deployment
+Name:                   deployment
+Namespace:              default
+CreationTimestamp:      Sun, 09 Oct 2022 14:28:47 +0900
+Labels:                 <none>
+Annotations:            deployment.kubernetes.io/revision: 5
+                        kubernetes.io/change-cause: application create version 1.0.0
+Selector:               app=node
+Replicas:               5 desired | 5 updated | 5 total | 5 available | 0 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        10
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+Pod Template:
+  Labels:  app=node
+  Containers:
+   node:
+    Image:        kim0lil/80700:v-1.0.0
+    Port:         8080/TCP
+    Host Port:    0/TCP
+    Liveness:     http-get http://:8080/healthy delay=0s timeout=1s period=10s #success=1 #failure=3
+    Environment:  <none>
+    Mounts:       <none>
+  Volumes:        <none>
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      True    MinimumReplicasAvailable
+  Progressing    True    NewReplicaSetAvailable
+OldReplicaSets:  <none>
+NewReplicaSet:   deployment-5b7db75bf8 (5/5 replicas created)
+Events:
+  Type    Reason             Age                  From                   Message
+  ----    ------             ----                 ----                   -------
+  Normal  ScalingReplicaSet  25m                  deployment-controller  Scaled up replica set deployment-84d66c48b4 to 2
+  Normal  ScalingReplicaSet  25m                  deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 4
+  Normal  ScalingReplicaSet  25m                  deployment-controller  Scaled up replica set deployment-84d66c48b4 to 3
+  Normal  ScalingReplicaSet  24m                  deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 1
+  Normal  ScalingReplicaSet  24m                  deployment-controller  Scaled down replica set deployment-5b7db75bf8 to 0
+  Normal  ScalingReplicaSet  23m                  deployment-controller  Scaled up replica set deployment-7cff6f9b94 to 2
+  Normal  ScalingReplicaSet  22m (x3 over 23m)    deployment-controller  (combined from similar events): Scaled up replica set deployment-7cff6f9b94 to 5
+  Normal  ScalingReplicaSet  5m57s (x2 over 24m)  deployment-controller  Scaled up replica set deployment-84d66c48b4 to 5
+  Normal  ScalingReplicaSet  5m57s                deployment-controller  Scaled down replica set deployment-7cff6f9b94 to 2
+  Normal  ScalingReplicaSet  5m43s                deployment-controller  Scaled down replica set deployment-7cff6f9b94 to 0
+  Normal  ScalingReplicaSet  28s                  deployment-controller  Scaled up replica set deployment-5b7db75bf8 to 3
+  Normal  ScalingReplicaSet  28s (x2 over 23m)    deployment-controller  Scaled down replica set deployment-84d66c48b4 to 4
+  Normal  ScalingReplicaSet  28s                  deployment-controller  Scaled up replica set deployment-5b7db75bf8 to 2
+  Normal  ScalingReplicaSet  16s (x2 over 28m)    deployment-controller  Scaled up replica set deployment-5b7db75bf8 to 5
+  Normal  ScalingReplicaSet  16s                  deployment-controller  Scaled down replica set deployment-84d66c48b4 to 1
+  Normal  ScalingReplicaSet  3s                   deployment-controller  Scaled down replica set deployment-84d66c48b4 to 0
+
+# 테스트를 위하여 파드와 서비스 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods,service
+NAME                              READY   STATUS    RESTARTS   AGE
+pod/deployment-5b7db75bf8-44mpb   1/1     Running   0          79s
+pod/deployment-5b7db75bf8-6cx55   1/1     Running   0          67s
+pod/deployment-5b7db75bf8-f6kwr   1/1     Running   0          79s
+pod/deployment-5b7db75bf8-hfs77   1/1     Running   0          79s
+pod/deployment-5b7db75bf8-wx67q   1/1     Running   0          67s
+
+NAME                         TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+service/deployment-service   ClusterIP   10.101.9.196   <none>        80/TCP    29m
+service/kubernetes           ClusterIP   10.96.0.1      <none>        443/TCP   29m
+
+# 테스트 시행 (1.0.0) 요청을 처리하는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod/deployment-5b7db75bf8-44mpb -- curl http://deployment-service
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   115    0   115    0     0  57500      0 --:--:-- --:--:-- --:--:-- 57500
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is deployment-5b7db75bf8-6cx55"}
+
+# 버전 업데이트 히스토리 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl rollout history deployment/deployment
+deployment.apps/deployment
+REVISION  CHANGE-CAUSE
+3         hotfix version 1.0.2 to 1.0.4
+4         bugfix version 1.0.0 to 1.0.2
+5         application create version 1.0.0
+
+# 테스트가 끝난 오브젝트 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete deployment,service --all
+deployment.apps "deployment" deleted
+service "deployment-service" deleted
+service "kubernetes" deleted
+```
+
+#### maxSurge and maxUnavailable
+
+디플로이먼트를 이야기하다가 1.0.4 버전으로 업데이트 도중 오류가 발생할 경우에도 2개의 서비스가 남아서 서비스하고 있었습니다.
+
+이는 `maxUnavailable`와 `maxSurge` 서비스를 사용하여 처리되는 항목입니다.
+
+먼저 두 속성값은 디플로이먼트의 롤링업데이트 시 처리하는 속성값으로써 롤링업데이터의 제어와 애플리케이션 업데이트(스택)를 처리하는데 사용합니다.
+
+![디플로이먼트-3](./imgs/00016.png)
+
+그림을 보면 알 수 있듯이 `maxSurge`는 롤링 업데이트 시 원하는 `replicas` 보다 더 파드를 생성할 수 있는 수량을 말합니다.
+
+`replicas`가 5일 경우 `maxSurge`가 `1`이라는 말은 최대 파드를 6개 까지 생성 할 수 있다는 말이 됩니다.
+
+만일 `maxSurge`가 `replicas`와 동일하게 된다면 어떻게 될까요?
+
+다음은 `maxUnavailable`는 롤링 업데이트 도중 사용할 수 없는 파드의 최대 수량을 말합니다.
+
+![디플로이먼트-4](./imgs/00017.png)
+
+그림은 `replicas`가 `5`개 일 경우 `1`개의 `maxUnavailable`일 경우 `2pass` 까지의 내용을 담고 있습니다.
+
+`maxUnavailable`은 `replicas`의 신뢰도를 증가 시키는 속성값으로써 `maxUnavailable`가 0이라는 말은 롤링 업데이트 시 `replicas`의 수량 만큼은 서비스가 가능하다는 말이 됩니다.
+
+따라서 `maxUnavailable`이 높으면 높을 수록 서비스에 대한 신뢰도는 낮아지게 되는 현상이 발생합니다.
+
+만일 `maxUnavailable`가 `replicas`와 동일하게 된다면 어떻게 될까요?
+
+그렇다면 `maxSurge`가 `1`이고 `maxUnavailable`이 `1`인 상황은 어떻게 처리할 까요?
+
+아래 그림을 보면서 이해해 보도록 하겠습니다.
+
+![디플로이먼트-5](./imgs/00018.png)
+
+1. `maxUnavailable`이 1이기 때문에 `pod-5`을 삭제합니다.
+2. `maxSurge`가 1이기 때문에 `pod-6`과 `pod-7`을 생성합니다.
+3. `6`번과 `7`번이 준비 되면 `running`파드는 `6`이 되므로 running - ( replicas - maxUnavailable ) 만큼 제거합니다. {6-(5-1) = 2}
+4. 1,2,3번을 반복하면서 파드를 생성합니다.
+
+디플로이먼트는 여기까지 하고 뒤쪽에 보안과 관련된 내용에서 더 다루도록 하겠습니다.
+
+### job
+
+`deployment`는 배포를 위한 리소스 였다면 이번에는 배치를 위한 리소스를 설명하도록 하겠습니다.
+
+배치 프로세스는 대용량의 처리를 요구하는 서비스를 위하여 작성 됩니다.
+
+쿠버네티스에서 잡(`job`) 프로세스를 어떻게 처리하는지 살펴 보도록 하겠습니다.
+
+설정 파일(`00011.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job
+spec:
+  template:
+    metadata:
+      labels:
+        app: job
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: curl
+        image: centos:7
+        command: ['/bin/cat','/etc/hosts'] # /etc/hosts를 조회
+```
+
+설정 파일을 사용하여 잡 오브젝트를 생성합니다.
+
+```sh
+# 설정 파일을 사용하여 잡 오브젝트 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00011.yml
+job.batch/job created
+
+# 잡 오브젝트가 파드를 생성했는지 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME        READY   STATUS      RESTARTS   AGE
+job-tb4xt   0/1     Completed   0          7s
+
+# 파드의 로그를 확인하여 작업이 올바르게 처리 되었는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl logs job-tb4xt
+# Kubernetes-managed hosts file.
+127.0.0.1       localhost
+::1     localhost ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+fe00::0 ip6-mcastprefix
+fe00::1 ip6-allnodes
+fe00::2 ip6-allrouters
+172.17.0.2      job-tb4xt
+
+# 테스트가 끝난 파드는 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete job --all
+job.batch "job" deleted
+
+```
+
+잡 오브젝트는 디플로인트와는 다르게 단일 또는 선택적 처리를 위한 오브젝트입니다.
+
+따라서 작업이 종료 될 경우 `Completed`로 상태가 변경 되어 종료 됩니다.
+
+이러한 잡을 동일한 작업을 원하는 수량만큼 실행해야 할 경우에는 `completions`를 설정하여 순차적으로 실행할 수 있습니다.
+
+만일 병렬로 처리해야 할 경우 `parallelizm`속성을 추가하여 병렬화 개수를 지정할 수 있습니다.
+
+먼저 순차적 처리부터 실습하겠습니다.
+
+설정 파일(`00012.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job
+spec:
+  completions: 10  # 순차적으로 10개의 작업을 실행
+  template:
+    metadata:
+      labels:
+        app: job
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: job
+        image: centos:7
+        args: ["Hello Job"]
+        command: ["/bin/echo"]
+```
+
+설정 파일을 사용하여 잡 객체를 생성한 다음 순차적으로 작업이 실행 되는지 확인합니다.
+
+```sh
+# 설정 파일을 사용하여잡을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00012.yml
+job.batch/job created
+
+# 순차적으로 10 개의 파드가 실행 되는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get po
+NAME        READY   STATUS      RESTARTS   AGE
+job-2fghf   0/1     Completed   0          3s
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get po
+NAME        READY   STATUS      RESTARTS   AGE
+job-2fghf   0/1     Completed   0          9s
+job-9vq4w   0/1     Completed   0          4s
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get po
+NAME        READY   STATUS      RESTARTS   AGE
+job-2fghf   0/1     Completed   0          12s
+job-9vq4w   0/1     Completed   0          7s
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get po
+NAME        READY   STATUS      RESTARTS   AGE
+job-2fghf   0/1     Completed   0          14s
+job-9vq4w   0/1     Completed   0          9s
+job-tqdws   0/1     Completed   0          4s
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get po
+NAME        READY   STATUS      RESTARTS   AGE
+job-2fghf   0/1     Completed   0          18s
+job-6x59m   0/1     Completed   0          3s
+job-9vq4w   0/1     Completed   0          13s
+job-tqdws   0/1     Completed   0          8s
+...
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get po
+NAME        READY   STATUS      RESTARTS   AGE
+job-2fghf   0/1     Completed   0          87s
+job-6x59m   0/1     Completed   0          72s
+job-7b7nl   0/1     Completed   0          56s
+job-9vq4w   0/1     Completed   0          82s
+job-c26m5   0/1     Completed   0          51s
+job-c6c9v   0/1     Completed   0          61s
+job-l4zcp   0/1     Completed   0          66s
+job-prwh2   0/1     Completed   0          41s
+job-tqdws   0/1     Completed   0          77s
+job-vk6gp   0/1     Completed   0          46s
+
+# 작업이 올바르게 실행 되었는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl logs job-2fghf
+Hello Job
+
+# 테스트가 끝난 작업을 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete job --all
+job.batch "job" deleted
+```
+
+이번에는 병렬 속성을 사용하여 작업을 실행합니다.
+
+기존과 동일하게 설정 파일(`00013.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job
+spec:
+  completions: 10
+  parallelism: 2   # 실행 시 병렬로 (2)단위 실행
+  template:
+    metadata:
+      labels:
+        app: job
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: job
+        image: centos:7
+        args: ["Hello Job"]
+        command: ["/bin/echo"]
+```
+
+설정 파일을 사용하여 잡을 생성 후 병렬로 파드가 생성 되는지 확인합니다.
+
+```sh
+# 설정 파일을 사용하여 잡을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00013.yml
+job.batch/job created
+
+# 생성한 잡을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get job
+NAME   COMPLETIONS   DURATION   AGE
+job    0/10          5s         5s
+
+# 10 개의 파드가 2개씩 병렬로 처리 되는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod
+NAME        READY   STATUS              RESTARTS   AGE
+job-957dk   0/1     Completed           0          7s
+job-vnwgb   0/1     Completed           0          7s
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod
+NAME        READY   STATUS      RESTARTS   AGE
+job-957dk   0/1     Completed   0          9s
+job-j6j9f   0/1     Completed   0          3s
+job-tchhs   0/1     Completed   0          3s
+job-vnwgb   0/1     Completed   0          9s
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod
+NAME        READY   STATUS      RESTARTS   AGE
+job-957dk   0/1     Completed   0          14s
+job-j6j9f   0/1     Completed   0          8s
+job-k78t9   0/1     Completed   0          3s
+job-nhwrl   0/1     Completed   0          3s
+job-tchhs   0/1     Completed   0          8s
+job-vnwgb   0/1     Completed   0          14s
+
+...
+
+# 테스트가 끝난 잡을 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete job --all
+job.batch "job" deleted
+
+```
+
+#### cron job
+
+작업 스케줄러는 원하는 시간 또는 원하는 타이밍에 스케줄링 되어야 합니다.
+
+이러한 스케줄링 트리거는 리눅스에서 사용하는 크론탭을 사용하여 처리합니다.
+
+쿠버네티스는 이 크론탭을 사용하여 잡을 스케줄링 할 수 있습니다.
+
+간단하게 이전에 작업했던 `hello-job`을 출력하는 파드를 `1분` 단위로 실행한다고 가정하겠습니다.
+
+이럴경우 크론탭의 스케줄러는 아래와 같습니다.
+
+`*/1 * * * * *` 각 항목은 아래 값을 의미합니다.
+
+1. 첫 번째 항목은 `분`을 나타내며 (0-59)
+2. 두 번째 항목은 `시`를 나태내며 (0-23)
+3. 세 번째 항목은 `일`을 나타내며 (1-31)
+4. 네 번째 항목은 `월`을 나타내며 (1-12)
+5. 마지막 항목은 `요일`을 나타냅니다 (`[0,7]`=일, 1=월요일, 2=화요일, 3=수요일, 4=목요일, 5=금요일,6=토요일)
+
+특정 시간을 나타낼 때는 직접 입력합니다.
+
+가령 `1월 2일 3시 4분`의 경우는 `4 3 2 1 *` 로 나타냅니다.
+
+하지만 특정한 값이 지정되지 않을 경우(`매월 1일` - 월에 관계 없는 경우)는 `*`을 사용하여 등록합니다.
+
+가령 `매월 1일 0시 0분`의 경우는 `0 0 1 * *`로 나타낼 수 있습니다.
+
+또는 범위를 선택하여 등록 할수 있습니다.
+
+가령 `1월에서 부터 6월까지 매월`라는 조건식은 `1-6`과 같으며 이는 `0 0 0 1-6 *`로 표현할 수 있습니다.
+
+조금 더 설정하자면 `1월 3월 5월`만 이라는 조건식은 `1,3,5`로 표현하며 이는 `0 0 0 1,3,5 *`로 표현 가능합니다.
+
+마지막으로 주기적인 간격이 있을 경우 가령 `매 2시간 마다`라는 조건식은 `*/2`로 표현하며 이는 `0 */2 * * *`로 표현 합니다.
+
+대략적으로 이해가 되었으면 설정 파일(`00014.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cronjob
+spec:
+  schedule: "* * * * *" # 크론 잡의 스캐줄링을 등록
+  jobTemplate:          # 잡 템플릿을 등록
+    metadata:
+      name: job
+    spec:
+      template:
+        metadata:
+          labels:
+            app: job
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: job
+            image: centos:7
+            args: ["Hello Job"]
+            command: ["/bin/echo"]
+```
+
+설정 파일을 사용하여 크론잡을 생성해 보도록 하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 크론잡을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00014.yml
+cronjob.batch/cronjob created
+
+# 생성한 크론잡을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get cronjob
+NAME      SCHEDULE    SUSPEND   ACTIVE   LAST SCHEDULE   AGE
+cronjob   * * * * *   False     0        7s              26s
+
+# 크론잡이 관리하는 잡을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get job
+NAME               COMPLETIONS   DURATION   AGE
+cronjob-27755234   1/1           5s         13s
+
+# 잡이 관리하는 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod
+NAME                     READY   STATUS      RESTARTS   AGE
+cronjob-27755234-lh98r   0/1     Completed   0          16s
+
+# 60초 뒤 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get job
+NAME               COMPLETIONS   DURATION   AGE
+cronjob-27755234   1/1           5s         63s
+cronjob-27755235   0/1           3s         3s
 ```

@@ -1,0 +1,21 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cronjob
+spec:
+  schedule: "* * * * *" # 크론 잡의 스캐줄링을 등록
+  jobTemplate:          # 잡 템플릿을 등록
+    metadata:
+      name: job
+    spec:
+      template:
+        metadata:
+          labels:
+            app: job
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: job
+            image: centos:7
+            args: ["Hello Job"]
+            command: ["/bin/echo"]

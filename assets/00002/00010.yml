@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-port
+spec:
+  type: NodePort      # 타입을 'NodePort'노드 포트로 등록
+  selector:
+    app: node
+  ports:
+  - name: node
+    port: 80          # ClustIP 포트를 등록
+    targetPort: 8080  # Container 포트를 등록
+    nodePort: 32700   # 외부에 노출할 노드의 포트를 등록

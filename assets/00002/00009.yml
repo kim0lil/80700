@@ -3,7 +3,6 @@ kind: Service
 metadata:
   name: app-service-session-affinity
 spec:
-  type: LoadBalancer
   sessionAffinity: ClientIP    # 클라이언트의 아이피를 사용하여 같은 아이피 일 경우 같은 컨테이너를 선택
   ports:                       # 포드 정보를 입력
   - port: 80                   # 서비스가 사용할 포트를 등록

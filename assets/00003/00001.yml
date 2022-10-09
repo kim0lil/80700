@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: daemonsets
+spec:
+  selector:
+    matchLabels:
+      app: daemonsets
+  template:
+    metadata:
+      name: daemonsets-pod
+      labels:
+        app: daemonsets
+    spec:
+      nodeSelector:      # 노드를 선택
+        os: centos       # 선택할 노드의 레이블을 등록
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: daemonset-cont
+        ports:
+        - containerPort: 8080

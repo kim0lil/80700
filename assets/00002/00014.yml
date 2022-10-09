@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: rs-external-name
+spec:
+  selector:
+    matchLabels:
+      app: pod-external-name
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: pod-external-name
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: external-cont
+        ports:
+        - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-external-name
+spec:
+  type: ExternalName           # externalName 타입으로 등록
+  externalName: blog.yes24.com # 외부로 노출 될 CNAME을 등록
+  ports:                       # 외부로 노출 될 포트
+  - port: 80                   # 외부로 노출 될 포트를 등록

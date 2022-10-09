@@ -1,0 +1,18 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job
+spec:
+  completions: 10
+  parallelism: 2   # 실행 시 병렬로 (2)단위 실행
+  template:
+    metadata:
+      labels:
+        app: job
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: job
+        image: centos:7
+        args: ["Hello Job"]
+        command: ["/bin/echo"]

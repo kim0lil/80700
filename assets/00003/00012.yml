@@ -1,0 +1,17 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job
+spec:
+  completions: 10  # 순차적으로 10개의 작업을 실행
+  template:
+    metadata:
+      labels:
+        app: job
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: job
+        image: centos:7
+        args: ["Hello Job"]
+        command: ["/bin/echo"]

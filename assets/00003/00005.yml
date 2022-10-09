@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: replicaset-deployments
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: replicaset-deployments
+  template:
+    metadata:
+      labels:
+        app: replicaset-deployments
+        version: 1.0.2
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.2
+        name: replicaset-cont
+        ports:
+        - containerPort: 8080
