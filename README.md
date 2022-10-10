@@ -1453,7 +1453,166 @@ Name:         liveness-http-get-unhealthy
 
 라이브니스 프로브의 경우 애플리케이션의 오류를 처리하는 가볍지만 강력한 방법이긴하지만 라이브리스 프로브가 무거워질 경우 내부 애플리케이션의 요청을 주기적으로 처리해야 하므로 실제 서비스를 침해할 수 있으니 주의하여야 합니다.
 
-##### @TODO (livenessProbe-cmd)
+이번에는 `command`를 통하여 라이브니스 프로브를 구현하는 방법입니다.
+
+이번에도 역시 앱(`app.js`)을 수정하도록 하겠습니다.
+
+```js
+const http = require('http');
+const os   = require('os');
+const fs   = require('fs');   //- 파일을 쓰기 위하여 fs를 사용
+const port = 8080;
+
+//- 서비스 처리기를 생성한다.
+const serverProcessHandler = (req, res) => {
+    
+    //- [healthy]요청일 경우 컨테이너의 유효성을 검사
+    if ( req.url == '/healthy' )
+    {
+        //- 전송할 데이터 셋팅    
+        var data = {
+            ServerTime : new Date()
+        }
+        
+        //- 헤더 및 데이터 전송
+        res.writeHead(200, {'Content-Type': 'application/json'});
+        res.end();
+    }
+    //- [unhealthy]요청일 경우 컨테이너의 유효성 검사를 하지 않음
+    else if ( req.url == '/unhealthy' )
+    {
+        //- 헤더 및 데이터 전송
+        res.writeHead(404);
+        res.end();
+    }
+    else
+    {
+        //- 전송할 데이터 셋팅    
+        var data = {
+            error_code    : 0, 
+            error_message : null, 
+            data          : 'Hello Kubernetes this is Container ID is '.concat(os.hostname())
+        }
+
+        //- 헤더 및 데이터 전송
+        res.writeHead(200, {'Content-Type': 'application/json'});
+
+        res.end(JSON.stringify(data));
+    }
+} 
+
+const serverOpenHandler = function() {
+
+    //- 서버가 실행 되면 '/start' 파일로 생성한다.
+    fs.writeFileSync('/start', `server is running at http://127.0.0.1:${port}`);
+
+    console.log(`server is running at http://127.0.0.1:${port}`);
+}
+
+//- 서버를 생성한다.
+const www = http.createServer(serverProcessHandler);
+
+//- 생성한 서버를 오픈한다.
+www.listen(port, serverOpenHandler);
+```
+
+도커 파일을 사용하여 `2.0.1`버전으로 빌드후 서버로 푸시합니다.
+
+```sh
+# 도커 이미지를 빌드
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker build -t kim0lil/v-2.0.1 -f assets/00002/00003-1/Dockerfile assets/00002/00003-1
+...
+
+# 도커 이미지 푸시 
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker push kim0lil/80700:v-2.0.1
+...
+```
+
+이제 레플리케이션 컨트롤러를 생성해 테스트를 진행합니다.
+
+설정 파일(`00003-1`)을 생성한 다음 아래 설정 값을 입력합니다.
+
+```yml
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: rs-liveness
+spec:
+  replicas: 3
+  selector:
+    app: node
+  template:
+    metadata:
+      labels:
+        app: node
+    spec:
+      containers:
+      - name: node
+        image: kim0lil/80700:v-2.0.1 # 버전은 2.0.0이 아닌 2.0.1로 등록 ( 만일 2.0.0으로 등록 시 일정한 시간이 지날 경우 재 시작 )
+        livenessProbe:
+          initialDelaySeconds: 5 # 5초의 딜레이 시간이 주어짐
+          exec:
+            command: ['/bin/cat', '/start']
+        ports:
+        - containerPort: 8080
+```
+
+생성한 설정 파일을 사용하여 실습을 진행합니다.
+
+```sh
+# 설정 파일을 사용하여 레플리케이션 컨트롤러 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00002/00003-1/00003-1.yml
+replicationcontroller/rs-liveness created
+
+# 생성 된 레플리케이션 컨트롤러 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get replicationcontroller
+NAME          DESIRED   CURRENT   READY   AGE
+rs-liveness   3         3         3       31s
+
+# 생성 된 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                READY   STATUS    RESTARTS   AGE
+rs-liveness-l965b   1/1     Running   0          58s
+rs-liveness-rctfw   1/1     Running   0          58s
+rs-liveness-s6f75   1/1     Running   0          58s
+
+# `start`파일을 제거
+kubectl exec -it rs-liveness-l965b -- rm /start
+
+# 파드의 라이브니스 정보를 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod rs-liveness-l965b
+Name:         rs-liveness-l965b
+Namespace:    default
+Priority:     0
+Node:         minikube/192.168.49.2
+Start Time:   Mon, 10 Oct 2022 22:38:41 +0900
+Labels:       app=node
+Annotations:  <none>
+Status:       Running
+...
+Events:
+  Type     Reason     Age   From               Message
+  ----     ------     ----  ----               -------
+  Normal   Scheduled  117s  default-scheduler  Successfully assigned default/rs-liveness-l965b to minikube
+  Normal   Pulled     117s  kubelet            Container image "kim0lil/80700:v-2.0.1" already present on machine
+  Normal   Created    116s  kubelet            Created container node
+  Normal   Started    116s  kubelet            Started container node
+  Warning  Unhealthy  8s    kubelet            Liveness probe failed: /bin/cat: /start: No such file or directory
+
+# 일정 시간이 지나면 파드를 재시작
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                READY   STATUS    RESTARTS     AGE
+rs-liveness-l965b   1/1     Running   1 (5s ago)   2m45s
+rs-liveness-rctfw   1/1     Running   0            2m45s
+rs-liveness-s6f75   1/1     Running   0            2m45s
+```
 
 ### replicaset
 
@@ -2446,8 +2605,6 @@ $ kubectl exec -it rs-external-name-x2vfm -- curl http://svc-external-name/blogm
 admin@jinhyeok MINGW64 ~/dev/80700 (master)
 $ kubectl delete pods,service,replicaset --all
 ```
-
-### @TODO
 
 ### daemonSet
 
@@ -4151,4 +4308,512 @@ $ kubectl get job
 NAME               COMPLETIONS   DURATION   AGE
 cronjob-27755234   1/1           5s         63s
 cronjob-27755235   0/1           3s         3s
+```
+
+### ingress
+
+인그레스는 외부의 요청을 처리하기 위한 하나의 컨트롤러로써 클라이언트의 요청 경로에 따라 원하는 파드 또는 서비스를 선택하여 제공하는 기능을 가질 수 있습니다.
+
+이는 로드밸런서를 사용하여 원하는 서비스를 제공하는 방법이기도 합니다.
+
+가령 `http://kim0lil.co.kr` 이라는 도메인이 있을 경우 이 `kim0lil`은 하나의 도메인으로 취급합니다.
+
+도메인은 하위 도메인과 하위 경로로 추가할 수 있습니다.
+
+1. 하위 도메인 : `http://kubernetes.kim0lil.co.kr`
+2. 하위 경로 : `http://kim0lil.co.kr/submask`
+
+하위 도메인과 하위 경로를 사용하여 서비스를 분리 하는 정책을 `ingress`컨트롤러를 사용하여 처리합니다.
+
+인스레스를 사용하기 위하여 에드온을 추가하여야 합니다.
+
+```sh
+# 에드온 리스트를 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ ./bin/minikube addons list
+|-----------------------------|----------|--------------|--------------------------------|
+|         ADDON NAME          | PROFILE  |    STATUS    |           MAINTAINER           |
+|-----------------------------|----------|--------------|--------------------------------|
+| ...
+| ingress                     | minikube | disabled     | 3rd party (unknown)            |
+| ingress-dns                 | minikube | disabled     | Google                         |
+| ...
+|-----------------------------|----------|--------------|--------------------------------|
+* To see addons list for other profiles use: `minikube addons -p name list`
+```
+
+에드온을 확인하여 disable이 되어 있을 경우 enable로 수정 합니다.
+
+```sh
+# 애드온을 활성화
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ ./bin/minikube addons enable ingress
+* After the addon is enabled, please run "minikube tunnel" and your ingress resources would be available at "127.0.0.1"
+  - Using image k8s.gcr.io/ingress-nginx/controller:v1.2.1
+  - Using image k8s.gcr.io/ingress-nginx/kube-webhook-certgen:v1.1.1
+  - Using image k8s.gcr.io/ingress-nginx/kube-webhook-certgen:v1.1.1
+* Verifying ingress addon...
+* 'ingress' 애드온이 활성화되었습니다
+
+# 인그레스 컨트롤러가 정상적으로 동작하는지 확인
+# 쿠버네티스가 관리하는 컴포넌트 타입이 컨트롤러만 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get po -n ingress-nginx -l="app.kubernetes.io/component=controller"
+NAME                                        READY   STATUS    RESTARTS   AGE
+ingress-nginx-controller-755dfbfc65-lttxc   1/1     Running   0          8m14s
+```
+
+인그레스 컨트롤러는 서비스의 뒤편에서 서비스의 정보를 프로비져닝 하여 원하는 서비스를 선택하도록 합니다.
+
+![인그레스-1](./imgs/00019.png)
+
+따라서 인그레스는 서비스의 엔드포인트를 사용하여 파드의 요청 전송합니다.
+
+그렇다면 이제 실습해보도록 하겠습니다.
+
+실습을 위하여 먼저 파드와 서비스를 생성하겠습니다.
+
+설정 파일(`00015.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: node-v1
+  template:
+    metadata:
+      labels:
+        app: node-v1
+    spec:
+      containers:
+      - name: node-v1
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-v1
+spec:
+  type: LoadBalancer # 외부로 노출 되어야 하기 때문에 로드 벨런서를 사용한다는 것이 중요
+  selector:
+    app: node-v1
+  ports:
+  - port: 8888
+    targetPort: 8080
+```
+
+설정 파일을 사용하여 서비스와 애플리케이션을 생성합니다.
+
+```sh
+# 설정 파일을 사용하여 서비스와 디플로이먼트 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00015.yml
+deployment.apps/deployment-v1 created
+service/service-v1 created
+
+# 생성 된 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                            READY   STATUS    RESTARTS   AGE
+deployment-v1-9bd5ff4b9-fddc9   1/1     Running   0          20s
+deployment-v1-9bd5ff4b9-mhqsb   1/1     Running   0          20s
+deployment-v1-9bd5ff4b9-rfb6f   1/1     Running   0          20s
+
+# 생성 된 서비스 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get service
+NAME         TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE
+kubernetes   ClusterIP      10.96.0.1        <none>        443/TCP          24s
+service-v1   LoadBalancer   10.102.242.154   127.0.0.1     8888:31799/TCP   23s
+
+# 생성 된 앤드포인트 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get endpoints
+NAME         ENDPOINTS                                         AGE
+kubernetes   192.168.49.2:8443                                 89s
+service-v1   172.17.0.7:8080,172.17.0.8:8080,172.17.0.9:8080   73s
+
+# 파드를 사용하여 서비스로 요청 테스트
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it deployment-v1-9bd5ff4b9-rfb6f -- curl http://service-v1:8888
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   117    0   117    0     0  14625      0 --:--:-- --:--:-- --:--:-- 14625
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is deployment-v1-9bd5ff4b9-mhqsb"}
+```
+
+이제 인그레스 서비스를 생성해 보도록 하겠습니다.
+
+동일하게 설정 파일(`00016.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: networking.k8s.io/v1   # 네트워크 서비스 버전으로 등록
+kind: Ingress                      # 오브젝트 타입을 인그레스로 등록
+metadata:
+  name: ingress
+spec:
+  rules:
+  - host: kim0lil.co.kr
+    http:                          # http 매칭을 시도
+      paths:                       # 하위 경로 정보를 등록
+      - pathType: Prefix           # 앞쪽 부분 매칭을 시도 요청이 /abc 일 경우 Prefix가 /a일 경우 매칭 정확성 매칭은 Exact[완벽매칭]
+        path: /v1                  # 하위 경로를 등록 /v1일 경우 [host] + [path]의 경로로 매칭 >> kim0lil.co.kr/v1
+        backend:                   # 백엔드 서비스를 등록
+          service:                 # 서비스 정보를 등록
+            name: service-v1       # 서비스 명칭을 등록
+            port:
+              number: 8888         # 서비스 포드가 8888이기 때문에 8888등록
+```
+
+인그레스 설정 파일을 사용하여 인그레스를 생성해보도록 하겠습니다.
+
+```sh
+# 설정 파일을 사용하요 인그레스 오브젝트 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00016.yml
+ingress.networking.k8s.io/ingress created
+
+# 생성한 인그레스 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get ingress
+NAME      CLASS   HOSTS           ADDRESS   PORTS   AGE
+ingress   nginx   kim0lil.co.kr             80      12s
+
+# 인그래스와 백엔드가 잘 연결 되어 있는지 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe ingress
+Name:             ingress
+Labels:           <none>
+Namespace:        default
+Address:
+Ingress Class:    nginx
+Default backend:  <default>
+Rules:
+  Host           Path  Backends
+  ----           ----  --------
+  kim0lil.co.kr
+                 /v1   service-v1:8888 (172.17.0.7:8080,172.17.0.8:8080,172.17.0.9:8080)
+Annotations:     <none>
+Events:
+  Type    Reason  Age   From                      Message
+  ----    ------  ----  ----                      -------
+  Normal  Sync    36s   nginx-ingress-controller  Scheduled for sync
+```
+
+여기까지 하고 현제 우리는 개인 `dns`를 사용하고 있지 않기 때문에 `windows`의 경우 `C:\Windows\System32\drivers\etc`경로로 이동하여 `hosts`파일을 오픈한 다음 아래 값을 등록합니다.
+
+(리눅스의 경우 `/etc/hosts`파일에 추가합니다.)
+
+`127.0.0.1 kim0lil.co.kr`
+
+저장한 다음 다시 실습으로 돌아 갑니다.
+
+```sh
+# 노드의 호스트를 127.0.0.1로 연결
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ ./bin/minikube.exe tunnel
+* Tunnel successfully started
+
+* NOTE: Please do not close this terminal as this process must stay alive for the tunnel to be accessible ...
+
+* service-v1 서비스의 터널을 시작하는 중
+! Access to ports below 1024 may fail on Windows with OpenSSH clients older than v8.1. For more information, see: https://minikube.sigs.k8s.io/docs/handbook/accessing/#access-to-ports-1024-on-windows-requires-root-permission
+* ingress 서비스의 터널을 시작하는 중
+
+# 새로운 터미널을 오픈한 다음 인그레스 테스트를 진행
+admin@jinhyeok MINGW64 ~/dev
+$ curl kim0lil.co.kr/v1
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   117    0   117    0     0  12803      0 --:--:-- --:--:-- --:--:-- 14625
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is deployment-v1-9bd5ff4b9-fddc9"}
+
+# 다음 실습을 위하여 이전 터미널로 돌아가서 Ctrl+C를 눌러 터널을 제거
+```
+
+이번에는 하위 도메인을 추가하여 인그레스에 등ㅁ록 하도록 하겠습니다.
+
+먼저 설정 파일(`00017.yml`)을 하나 더 추가한 다음 아래 설정 값을 입력합니다.
+
+```yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-v2
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: node-v2
+  template:
+    metadata:
+      labels:
+        app: node-v2
+    spec:
+      containers:
+      - name: node-v2
+        image: kim0lil/80700:v-1.0.2
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-v2
+spec:
+  type: LoadBalancer
+  selector:
+    app: node-v2
+  ports:
+  - port: 9999
+    targetPort: 8080
+```
+
+설정 파일을 사용하여 디플로이먼트와 서비스를 생성합니다.
+
+```sh
+# 설정 파일을 사용하여 서비스와 디플로이먼트를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00017.yml
+deployment.apps/deployment-v2 created
+service/service-v2 created
+
+# 생성 된 서비스 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get service
+NAME         TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE
+kubernetes   ClusterIP      10.96.0.1        <none>        443/TCP          26m
+service-v1   LoadBalancer   10.102.242.154   <pending>     8888:31799/TCP   26m
+service-v2   LoadBalancer   10.97.115.187    127.0.0.1     9999:31988/TCP   73s
+
+# 레이블이 node-v2인 파드만 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -l 'app in(node-v2)'
+NAME                             READY   STATUS    RESTARTS   AGE
+deployment-v2-6ffdcbf4c7-5t2ds   1/1     Running   0          54s
+deployment-v2-6ffdcbf4c7-db2dx   1/1     Running   0          54s
+deployment-v2-6ffdcbf4c7-nshvx   1/1     Running   0          54s
+```
+
+인그레스도 파일도 수정합니다.
+
+실제 파일을 수정하지 않고 새로운 파일(`00018.yml`)을 생성한 다음 `apply` 명령을 통하여 수정 합니다.
+
+```yml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress
+spec:
+  rules:
+  - host: kim0lil.co.kr
+    http:
+      paths:
+      - pathType: Prefix
+        path: /v1
+        backend:
+          service:
+            name: service-v1
+            port:
+              number: 8888
+      - pathType: Prefix           # 룰 서비스를 추가 등록
+        path: /v2
+        backend:
+          service:
+            name: service-v2
+            port:
+              number: 9999
+```
+
+설정 파일을 사용하여 인그레스를 업데이트 합니다.
+
+```sh
+# 인그레서 업데이트
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl apply -f assets/00003/00018.yml
+Warning: resource ingresses/ingress is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+ingress.networking.k8s.io/ingress configured
+
+# 인그레스 업데이트 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe ingress/ingerss
+Name:             ingerss
+Labels:           <none>
+Namespace:        default
+Address:          192.168.49.2
+Ingress Class:    nginx
+Default backend:  <default>
+Rules:
+  Host           Path  Backends
+  ----           ----  --------
+  kim0lil.co.kr
+                 /v1   service-v1:8888 (172.17.0.7:8080,172.17.0.8:8080,172.17.0.9:8080)
+                 /v2   service-v2:9999 (172.17.0.2:8080,172.17.0.3:8080,172.17.0.6:8080)
+Annotations:     <none>
+Events:
+  Type    Reason  Age                From                      Message
+  ----    ------  ----               ----                      -------
+  Normal  Sync    47s (x3 over 18m)  nginx-ingress-controller  Scheduled for sync
+
+# 노드의 호스트를 127.0.0.1로 연결
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ ./bin/minikube.exe tunnel
+* Tunnel successfully started
+
+* NOTE: Please do not close this terminal as this process must stay alive for the tunnel to be accessible ...
+
+* service-v1 서비스의 터널을 시작하는 중
+! Access to ports below 1024 may fail on Windows with OpenSSH clients older than v8.1. For more information, see: https://minikube.sigs.k8s.io/docs/handbook/accessing/#access-to-ports-1024-on-windows-requires-root-permission
+* ingress 서비스의 터널을 시작하는 중
+
+# 새로운 터미널을 오픈한 다음 인그레스 테스트를 진행
+admin@jinhyeok MINGW64 ~/dev
+$ curl kim0lil.co.kr/v1
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   117    0   117    0     0  10292      0 --:--:-- --:--:-- --:--:-- 11700
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is deployment-v1-9bd5ff4b9-rfb6f"}
+
+admin@jinhyeok MINGW64 ~/dev
+$ curl kim0lil.co.kr/v2
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   135    0   135    0     0  10148      0 --:--:-- --:--:-- --:--:-- 11250
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is deployment-v2-6ffdcbf4c7-nshvx","version":"beta"}
+
+# 다음 실습을 위하여 이전 터미널로 돌아가서 Ctrl+C를 눌러 터널을 제거 후 인그레스 삭제
+admin@jinhyeok MINGW64 ~/dev
+$ kubectl delete ingress --all
+ingress.networking.k8s.io "ingerss" deleted
+```
+
+인그레스의 마지막 내용은 호스트를 변경하여 서비스를 선택하는 것입니다.
+
+현재 우리는 `kim0lil/v1`과 `kim0lil/v2`를 서비스 하였습니다.
+
+하지만 하위 경로가 아닌 하위 도메인으로 처리 하는 방법을 아직 모릅니다.
+
+이번에는 하위 경로가 아닌 하위 도메인으로 `v1.kim0lil.co.kr`과 `v2.kim0lil.co.kr`로 변경해보도록 하겠습니다.
+
+서비스와 파드는 그대로 두고 인그레스 설정 파일(`00019.yml`)을 하나 생성후 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress
+spec:
+  rules:
+  - host: v1.kim0lil.co.kr 
+    http:
+      paths:
+      - pathType: Prefix
+        path: /
+        backend:
+          service:
+            name: service-v1
+            port:
+              number: 8888
+  - host: v2.kim0lil.co.kr
+    http:
+      paths:
+      - pathType: Prefix
+        path: /
+        backend:
+          service:
+            name: service-v2
+            port:
+              number: 9999
+```
+
+`host`추가적으로 등록 되었습니다.
+
+실습하기 전 이전 `hosts` 파일로 이동하여 아래 값을 추가적으로 등록합니다.
+
+```text
+...
+127.0.0.1 v1.kim0lil.co.kr
+127.0.0.1 v2.kim0lil.co.kr
+```
+
+이제 설정 파일을 사용하여 인그레스를 생성한 다음 실습을 진행합니다.
+
+```sh
+# 설정 파일을 사용하여 인그레스 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00019.yml
+ingress.networking.k8s.io/ingress created
+
+# 생성한 인그레스 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get ingress
+NAME      CLASS   HOSTS                               ADDRESS   PORTS   AGE
+ingress   nginx   v1.kim0lil.co.kr,v2.kim0lil.co.kr             80      4s
+
+# 인그레스의 엔드포인트와 호스트가 연결 되어 있는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe ingress/ingress
+Name:             ingress
+Labels:           <none>
+Namespace:        default
+Address:
+Ingress Class:    nginx
+Default backend:  <default>
+Rules:
+  Host              Path  Backends
+  ----              ----  --------
+  v1.kim0lil.co.kr
+                    /   service-v1:8888 (172.17.0.7:8080,172.17.0.8:8080,172.17.0.9:8080)
+  v2.kim0lil.co.kr
+                    /   service-v2:9999 (172.17.0.2:8080,172.17.0.3:8080,172.17.0.6:8080)
+Annotations:        <none>
+Events:
+  Type    Reason  Age   From                      Message
+  ----    ------  ----  ----                      -------
+  Normal  Sync    11s   nginx-ingress-controller  Scheduled for sync
+
+# 노드의 호스트를 127.0.0.1로 연결
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ ./bin/minikube.exe tunnel
+* Tunnel successfully started
+
+* NOTE: Please do not close this terminal as this process must stay alive for the tunnel to be accessible ...
+
+* service-v1 서비스의 터널을 시작하는 중
+! Access to ports below 1024 may fail on Windows with OpenSSH clients older than v8.1. For more information, see: https://minikube.sigs.k8s.io/docs/handbook/accessing/#access-to-ports-1024-on-windows-requires-root-permission
+* ingress 서비스의 터널을 시작하는 중
+
+# 새로운 터미널을 오픈한 다음 인그레스 테스트를 진행
+admin@jinhyeok MINGW64 ~/dev
+$ curl v1.kim0lil.co.kr
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   117    0   117    0     0   6789      0 --:--:-- --:--:-- --:--:--  7312
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is deployment-v1-9bd5ff4b9-fddc9"}
+
+admin@jinhyeok MINGW64 ~/dev
+$ curl v2.kim0lil.co.kr
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   135    0   135    0     0  15097      0 --:--:-- --:--:-- --:--:-- 16875
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is deployment-v2-6ffdcbf4c7-nshvx","version":"beta"}
+
+# 다음 실습을 위하여 이전 터미널로 돌아가서 Ctrl+C를 눌러 터널을 제거 후 인그레스 삭제
+admin@jinhyeok MINGW64 ~/dev
+$ kubectl delete ingress --all
+ingress.networking.k8s.io "ingerss" deleted
 ```

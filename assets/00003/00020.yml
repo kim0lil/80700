@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress
+spec:
+  tls:
+  - hosts:
+    - kim0lil.co.kr
+    secretName: tls-secret
+  rules:
+  - host: v1.kim0lil.co.kr 
+    http:
+      paths:
+      - pathType: Prefix
+        path: /
+        backend:
+          service:
+            name: service-v1
+            port:
+              number: 8888
+  - host: v2.kim0lil.co.kr
+    http:
+      paths:
+      - pathType: Prefix
+        path: /
+        backend:
+          service:
+            name: service-v2
+            port:
+              number: 9999

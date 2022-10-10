@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: loadv1
+spec:
+  type: LoadBalancer
+  selector:
+    app: nodev1
+  ports:
+  - port: 8888
+    targetPort: 8080
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployv1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nodev1
+  template:
+    metadata:
+      labels:
+        app: nodev1
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: nodev1
+        ports:
+        - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: loadv2
+spec:
+  type: LoadBalancer
+  selector:
+    app: nodev2
+  ports:
+  - port: 9999
+    targetPort: 8080
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployv2
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nodev2
+  template:
+    metadata:
+      labels:
+        app: nodev2
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.2
+        name: nodev2
+        ports:
+        - containerPort: 8080
+
+---
+
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress
+spec:
+  rules:
+  - host: app.kim0lil.co.kr
+    http:
+      paths:
+      - path: /v1
+        pathType: Prefix
+        backend: 
+          service:
+            name: loadv1
+            port: 
+              number: 8888
+      # - path: /v2
+      #   pathType: Prefix
+      #   backend:
+      #     service:
+      #       name: loadv2
+      #       port: 
+      #         number: 9999
+  - host: web.kim0lil.co.kr
+    http:
+      paths:
+      - path: /v2
+        pathType: Prefix
+        backend:
+          service:
+            name: loadv2
+            port: 
+              number: 9999

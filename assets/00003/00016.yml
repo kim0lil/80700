@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1   # 네트워크 서비스 버전으로 등록
+kind: Ingress                      # 오브젝트 타입을 인그레스로 등록
+metadata:
+  name: ingerss
+spec:
+  rules:
+  - host: kim0lil.co.kr
+    http:                          # http 매칭을 시도
+      paths:                       # 하위 경로 정보를 등록
+      - pathType: Prefix           # 앞쪽 부분 매칭을 시도 요청이 /abc 일 경우 Prefix가 /a일 경우 매칭 정확성 매칭은 Exact[완벽매칭]
+        path: /v1                  # 하위 경로를 등록 /v1일 경우 [host] + [path]의 경로로 매칭 >> kim0lil.co.kr/v1
+        backend:                   # 백엔드 서비스를 등록
+          service:                 # 서비스 정보를 등록
+            name: service-v1       # 서비스 명칭을 등록
+            port:
+              number: 8888

@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: node-v1
+  template:
+    metadata:
+      labels:
+        app: node-v1
+    spec:
+      containers:
+      - name: node-v1
+        image: kim0lil/80700:v-1.0.0
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-v1
+spec:
+  type: LoadBalancer
+  selector:
+    app: node-v1
+  ports:
+  - port: 8888
+    targetPort: 8080

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: rs-liveness
+spec:
+  replicas: 3
+  selector:
+    app: node
+  template:
+    metadata:
+      labels:
+        app: node
+    spec:
+      containers:
+      - name: node
+        image: kim0lil/80700:v-2.0.1 # 버전은 2.0.0이 아닌 2.0.1로 등록 ( 만일 2.0.0으로 등록 시 일정한 시간이 지날 경우 재 시작 )
+        livenessProbe:
+          initialDelaySeconds: 5 # 5초의 딜레이 시간이 주어짐
+          exec:
+            command: ['/bin/cat', '/start']
+        ports:
+        - containerPort: 8080
