@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: namespace-rq
+  - apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: rq
+      namespace: namespace-rq
+    spec:
+      hard:                      # 하드웨어 리미트 등록
+        requests.cpu: 1          # 파드에서의 cpu최대 요청은 1
+        requests.memory: 100Mi   # 파드에서의 memory 최대 요청은 100Mi
+  - apiVersion:
+    kind: Pods
+    metadata:
+      name: pod-rq-over-cpu
+      namespace: namespace-rq
+      labels:
+        app: node
+    spec:
+      containers:
+      - name: node
+        image: kim0lil/80700:v-1.0.0
+        resources:
+          request:
+            cpu: 2               # cpu 를 초과하는 요청
+  - apiVersion:
+    kind: Pods
+    metadata:
+      name: pod-rq-over-memory
+      namespace: namespace-rq
+      labels:
+        app: node
+    spec:
+      containers:
+      - name: node
+        image: kim0lil/80700:v-1.0.0
+        resources:
+          request:
+            memory: 110Mi        # memory 를 초과하는 요청

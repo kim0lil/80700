@@ -4817,3 +4817,424 @@ admin@jinhyeok MINGW64 ~/dev
 $ kubectl delete ingress --all
 ingress.networking.k8s.io "ingerss" deleted
 ```
+
+## kubernetes configuration
+
+어느정도 쿠버네티스의 오브젝트를 이해하였다면 이번에는 쿠버네티스의 리소스 관리와 엔진에 대한 설정 정보를 알아 보도록 하겠습니다.
+
+### limitrange
+
+쿠버네티스의 오브젝트는 기본적으로 컨트롤 플레인에서 리소스의 할당을 요청합니다.
+
+이 경우 애플리케이션은 무제한적으로 리소스를 할당을 요청할 것이며 원하지 않는 요금 또는 리소스를 지불해야 합니다.
+
+따라서 애플리케이션에 리소스를 할당 제한하는 모델이 필요합니다..
+
+쿠버네티스에서 리소스의 제한을 관리하는 방법 중 하나는 리소스를 제한하는 객체를 생성하여 관리하도록 하는 것입니다.
+
+리소스 제한을 관리하는 객체는 `LimitRange`라는 객체입니다.
+
+그 전에 먼저 이전에 배운 네임스페이스를 생성하여 `default`가 아닌 `limit` 네임 스페이스에 제한을 걸어 보도록 하겠습니다.
+
+네임스페이스를 생성하기 위하여 설정 파일(`00001.yml`)을 생성한 다음 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: limit
+  labels:
+    type: micro
+```
+
+다음으로는 리소스를 제한할 설정 파일(`00002.yml`)을 생성한 다음 설정 값을 등록합니다.
+
+만일 컨테이너 하나의 리소스(메모리)를 최초 요청은 128메가를 요청하여 최대 258메가로 제한한다고 하였을 경우 아래와 같이 설정 할 수 있습니다.
+
+```yml
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: container-limit-range
+  namespace: limit
+spec:
+  limits:
+  - default:
+      memory: 256Mi
+    defaultRequest:
+      memory: 128Mi
+    type: Container
+```
+
+테스트를 위한 파드 설정 정보를 생성하겠습니다.
+
+새로운 설정 파일(`00003.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: limited-pod
+  namespace: limit
+  annotations:
+    memory.limit: limit-request-128Mi-limit-256Mi
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    ports:
+    - containerPort: 8080
+```
+
+파드 설정 정보는 어렵지 않게 작성했을 것이라 예감됩니다.
+
+그렇다면 위 3개의 설정 파일을 사용하여 쿠버네티스 오브젝트를 생성하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 네임 스페이스를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00001.yml
+namespace/limit created
+
+# 생성한 네임스페이스 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get namespace limit
+NAME    STATUS   AGE
+limit   Active   1m20s
+
+# 설정 파일을 사용하여 리미트 범위를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00002.yml
+limitrange/container-limit-range created
+
+# 생성한 리미트 범위 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe limitrange -n limit
+Name:       container-limit-range
+Namespace:  limit
+Type        Resource  Min  Max  Default Request  Default Limit  Max Limit/Request Ratio
+----        --------  ---  ---  ---------------  -------------  -----------------------
+Container   memory    -    -    128Mi            256Mi          -
+
+# 설정 파일을 사용하여 파드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00003.yml
+pod/limited-pod created
+
+# 생성 한 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -n limit
+NAME          READY   STATUS    RESTARTS   AGE
+limited-pod   1/1     Running   0          34s
+
+# 생성 한 파드를 상세 조회
+# 리미트가 등록 되었는 것을 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod limited-pod -n limit
+Name:         limited-pod
+Namespace:    limit
+Priority:     0
+Node:         minikube/192.168.49.2
+Start Time:   Tue, 11 Oct 2022 22:28:48 +0900
+Labels:       app=node
+Annotations:  kubernetes.io/limit-ranger: LimitRanger plugin set: memory request for container node; memory limit for container node
+              memory.limit: limit-request-128Mi-limit-256Mi
+Status:       Running
+...
+    Limits:
+      memory:  256Mi
+    Requests:
+      memory:     128Mi
+    Environment:  <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-d8gmv (ro)
+...
+
+# 다음 실습을 위하여 네임스페이스 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete namespace limit
+namespace "limit" deleted
+```
+
+현재는 메모리를 할당 하였지만 cpu를 할당하는 방법도 동일합니다.
+
+빠르게 설정 파일(`00004.yml`)을 생성한 다음 네임스페이스와 리미트 파드의 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: limit-cpu
+
+---
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: limit-range-cpu
+  namespace: limit-cpu
+spec:
+  limits:
+  - default:          # 최초 값을 등록
+      cpu: 2          # cpu 최소 치는 [2] 코어로 지정
+    defaultRequest:   # 최대 확장 치를 등록
+      cpu: 500m       # 최대 확장 코어는 [500m]
+    type: Container
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: node
+  namespace: limit-cpu
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    ports:
+    - containerPort: 8080
+
+```
+
+설정 파일을 사용하여 네임스페이스와 리미트, 파드를 생성하고 테스트를 실행 합니다.
+
+```sh
+# 설정 파일을 사용하여 오브젝트 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00004.yml
+namespace/limit-cpu created
+limitrange/limit-range-cpu created
+pod/node created
+
+# 리미트 객체 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe limitrange -n limit-cpu
+Name:       limit-range-cpu
+Namespace:  limit-cpu
+Type        Resource  Min  Max  Default Request  Default Limit  Max Limit/Request Ratio
+----        --------  ---  ---  ---------------  -------------  -----------------------
+Container   cpu       -    -    500m             2              -
+
+# cpu 할당량을 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pods -n limit-cpu
+Name:         node
+Namespace:    limit-cpu
+...
+    Limits:
+      cpu:  2
+    Requests:
+      cpu:        500m
+    Environment:  <none>
+...
+
+# 다음 실습을 위하여 네임스페이스를 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete namespace limit-cpu
+namespace "limit-cpu" deleted
+```
+
+이번에는 조금 다르게 실습을 해보도록 하겠습니다.
+
+이전까지는 리미트 객체를 사용하여 컨테이너의 요청을 제약하였습니다.
+
+![리소스-1](./imgs/00020.png)
+
+이번에는 컨테이너가 직접 리소스를 요청하고 리미트로 제한하는 방식으로 처리해보도록 하겠습니다.
+
+설정 파일(`00005.yml`)을 생성한 다음 아래 설정 값을 입력합니다.
+
+```yml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: limit-min-max
+
+---
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: limit-range-min-max
+  namespace: limit-min-max
+spec:
+  limits:
+  - min:
+      memory: 10Mi
+    max:
+      memory: 1Gi
+    defaultRequest:
+      memory: 100Mi
+    type: Container
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: limit-pod-min-max
+  namespace: limit-min-max
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    ports:
+    - containerPort: 8080
+    resources:          # 리소스 정보를 파드에 등록
+      requests:         # 리소스 요청
+        memory: 150Mi   # 메모리 150Mi 요청
+```
+
+설정 파일을 사용하여 쿠버네티스 객체를 생성하고 테스트 합니다.
+
+```sh
+# 설정 파일을 사용하여 쿠버네티스 오브젝트 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00005.yml
+namespace/limit-min-max created
+limitrange/limit-range-min-max created
+pod/limit-pod-min-max created
+
+# 쿠버네티스 리미트 정보 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe limitrange -n limit-min-max
+Name:       limit-range-min-max
+Namespace:  limit-min-max
+Type        Resource  Min   Max  Default Request  Default Limit  Max Limit/Request Ratio
+----        --------  ---   ---  ---------------  -------------  -----------------------
+Container   memory    10Mi  1Gi  100Mi            1Gi            -
+
+# 파드 정보 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod -n limit-min-max
+Name:         limit-pod-min-max
+Namespace:    limit-min-max
+...
+    Limits:
+      memory:  1Gi
+    Requests:
+      memory:     150Mi
+    Environment:  <none>
+...
+
+# 다음 테스트를 위하여 네임스페이스 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete namespace limit-min-max
+namespace "limit-min-max" deleted
+```
+
+그렇다면 파드가 `min` 보다 작거나 `max`보다 크게 리소스를 요청 할 경우 어떻게 될까요?
+
+동일하게 설정 파일(`00006.yml`)을 생성한 뒤 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: limit-min-max
+
+---
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: limit-range-min-max
+  namespace: limit-min-max
+spec:
+  limits:
+  - min:
+      memory: 10Mi
+    max:
+      memory: 1Gi
+    defaultRequest:
+      memory: 100Mi
+    type: Container
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: limit-pod-min-max
+  namespace: limit-min-max
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    ports:
+    - containerPort: 8080
+    resources:          # 리소스 정보를 파드에 등록
+      requests:         # 리소스 요청
+        memory: 5Mi     # 최소 값(min)은 10Mi 이지만 5Mi로 요청
+
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: limit-pod-min-max
+  namespace: limit-min-max
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    ports:
+    - containerPort: 8080
+    resources:          # 리소스 정보를 파드에 등록
+      requests:         # 리소스 요청
+        memory: 2Gi     # 최대 값(max)은 1Gi 이지만 2Gi로 요청
+```
+
+바로 실습을 진행합니다.
+
+```sh
+# 파드 생성 시 메시지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00006.yml
+namespace/limit-min-max created
+limitrange/limit-range-min-max created
+Error from server (Forbidden): error when creating "assets/00004/00006.yml": pods "limit-pod-min" is forbidden: minimum memory usage per Container is 10Mi, but request is 5Mi
+Error from server (Invalid): error when creating "assets/00004/00006.yml": Pod "limit-pod-max" is invalid: spec.containers[0].resources.requests: Invalid value: "2Gi": must be less than or equal to memory limit
+```
+
+`limitRange`는 모두 처리 하였습니다.
+
+다음은 공식문서에도 있는 `ResourceQuota`객체를 확인해 보도록 하겠습니다.
+
+리소스 할당량에서 사용하는 리소스 이름은 아래와 같습니다.
+
+1. limits.cpu : pod의 최대 cpu 제한값
+2. limits.memory : pod의 최대 memory 제한값
+3. requests.cpu : pod의 최대 cpu 요청값(cpu)
+4. requests.memory : pod의 최대 memory 요청값(memory)
+5. pods : 스케줄링 되는 파드 개수
+6. 확장 리소스 : `requests.nvidia.com/gpu` gpu 요청값
+7. requests.storage : pod의 스토리지 요청값
+8. persistentvolumeclaims : 네임스페이스에 제한 되는 persistentvolumeclaims의 총 개수
+9. count/persistentvolumeclaims : persistentvolumeclaims 총 개수
+10. count/services : services 총 개수
+11. services.loadbalancers : 로드밸런서 개수
+12. services.nodeports : 서비스 노드 파트 개수
+13. count/secrets : secrets 총 개수
+14. count/configmaps : configmaps 총 개수
+15. count/replicationcontrollers : replicationcontrollers 총 개수
+16. count/deployments.apps : deployments에 생성 되는 apps 총 개수
+17. count/replicasets.apps : replicasets에 생성 되는 apps 총 개수
+18. count/statefulsets.apps : statefulsets에 생성 되는 apps 총 개수
+19. count/jobs.batch : jobs에 생성 되는 batch 총 개수
+20. count/cronjobs.batch : cronjobs에 생성 되는 batch 총 개수
+
+모두 다 테스트를 할수 없으므로 간단하게 파드와 서비스 개수만을 테스트 보도록 하겠습니다.
+

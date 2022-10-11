@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: limit-min-max
+
+---
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: limit-range-min-max
+  namespace: limit-min-max
+spec:
+  limits:
+  - min:
+      memory: 10Mi
+    max:
+      memory: 1Gi
+    defaultRequest:
+      memory: 100Mi
+    type: Container
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: limit-pod-min-max
+  namespace: limit-min-max
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    ports:
+    - containerPort: 8080
+    resources:          # 리소스 정보를 파드에 등록
+      requests:         # 리소스 요청
+        memory: 150Mi   # 메모리 150Mi 요청
