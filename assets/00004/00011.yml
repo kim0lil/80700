@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-volumes-file
+  labels:
+    app: node
+spec:
+  containers:
+  - image: kim0lil/80700:v-3.0.0
+    name: node
+    volumeMounts:
+    - name: host-volume-dir  # 디렉토리 마운트 (1)
+      mountPath: /host
+    - name: host-volume-file # 파일 마운트 (2)
+      mountPath: /now
+  volumes:
+  - name: host-volume-dir    # 디렉터리 볼륨 (1)
+    hostPath:
+      path: /host
+      type: Directory
+  - name: host-volume-file   # 파일 볼륨 (2)
+    hostPath:
+      path: /host/now
+      type: File

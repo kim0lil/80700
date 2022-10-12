@@ -1,0 +1,23 @@
+# 네임 스페이스
+# 기본 네임스페이스 셋팅
+kubectl config set-context --current --namespace=<insert-namespace-name-here>
+# 확인하기
+kubectl config view --minify | grep namespace:
+
+# 네임스페이스에 속하는 리소스
+kubectl api-resources --namespaced=true
+
+# 네임스페이스에 속하지 않는 리소스
+kubectl api-resources --namespaced=false
+
+# 노드
+...
+spec:
+  nodeSelector:
+    accelerator: nvidia-tesla-p100
+
+kubectl get pods -l 'environment in (production),tier in (frontend)'
+kubectl get pods -l 'environment in (production, qa)'
+kubectl get pods -l 'environment,environment notin (frontend)'
+
+gcloud compute disks create --size=10Gi my-disk

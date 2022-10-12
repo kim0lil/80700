@@ -4822,15 +4822,17 @@ ingress.networking.k8s.io "ingerss" deleted
 
 어느정도 쿠버네티스의 오브젝트를 이해하였다면 이번에는 쿠버네티스의 리소스 관리와 엔진에 대한 설정 정보를 알아 보도록 하겠습니다.
 
-### limitrange
+### limit
 
 쿠버네티스의 오브젝트는 기본적으로 컨트롤 플레인에서 리소스의 할당을 요청합니다.
 
 이 경우 애플리케이션은 무제한적으로 리소스를 할당을 요청할 것이며 원하지 않는 요금 또는 리소스를 지불해야 합니다.
 
-따라서 애플리케이션에 리소스를 할당 제한하는 모델이 필요합니다..
+따라서 애플리케이션에 리소스를 할당 제한하는 모델이 필요하며 이 장에서는 할당량 제한에 관하여 다루겠습니다.
 
-쿠버네티스에서 리소스의 제한을 관리하는 방법 중 하나는 리소스를 제한하는 객체를 생성하여 관리하도록 하는 것입니다.
+#### limitrange
+
+쿠버네티스에서 리소스의 제한을 관리하는 방법 중 하나는 리소스를 범위를 제한하는 객체를 생성하여 관리하도록 하는 것입니다.
 
 리소스 제한을 관리하는 객체는 `LimitRange`라는 객체입니다.
 
@@ -5209,9 +5211,15 @@ Error from server (Forbidden): error when creating "assets/00004/00006.yml": pod
 Error from server (Invalid): error when creating "assets/00004/00006.yml": Pod "limit-pod-max" is invalid: spec.containers[0].resources.requests: Invalid value: "2Gi": must be less than or equal to memory limit
 ```
 
-`limitRange`는 모두 처리 하였습니다.
+`limitRange`는 모두 확인하였습니다.
 
-다음은 공식문서에도 있는 `ResourceQuota`객체를 확인해 보도록 하겠습니다.
+리소스만을 관리하기 위해서는 `limitRange`만으로도 충분합니다.
+
+하지만 더 자세한 제한을 위해서는 내용을 참고 하시기 바랍니다.
+
+#### resourcequota
+
+다음은 리소스 및 오브젝트등 있는 `ResourceQuota`객체를 확인해 보도록 하겠습니다.
 
 리소스 할당량에서 사용하는 리소스 이름은 아래와 같습니다.
 
@@ -5238,3 +5246,466 @@ Error from server (Invalid): error when creating "assets/00004/00006.yml": Pod "
 
 모두 다 테스트를 할수 없으므로 간단하게 파드와 서비스 개수만을 테스트 보도록 하겠습니다.
 
+테스트를 위하여 설정 파일(`00007.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: List
+items:
+- apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: namespace-rq
+- apiVersion: v1
+  kind: ResourceQuota
+  metadata:
+    name: rq
+    namespace: namespace-rq
+  spec:
+    hard:                      # 하드웨어 리미트 등록
+      requests.cpu: 1          # 파드에서의 cpu최대 요청은 1
+      requests.memory: 100Mi   # 파드에서의 memory 최대 요청은 100Mi
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: pod-rq-over-cpu
+    namespace: namespace-rq
+    labels:
+      app: node
+  spec:
+    containers:
+    - name: node
+      image: kim0lil/80700:v-1.0.0
+      resources:
+        requests:
+          cpu: 2               # cpu 를 초과하는 요청
+          memory: 100Mi        # 정상 요청
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: pod-rq-over-memory
+    namespace: namespace-rq
+    labels:
+      app: node
+  spec:
+    containers:
+    - name: node
+      image: kim0lil/80700:v-1.0.0
+      resources:
+        requests:
+          cpu: 1               # 정상 요청
+          memory: 110Mi        # memory 를 초과하는 요청
+```
+
+처음 사용하는 `List`를 사용하였습니다.
+
+실제 내용은 동일하니 참고하세요.
+
+설정 파일의 내용은 `ResourceQuota`에서 `requset.cpu`는 1로 `request.memory`는 `100Mi`로 리미트를 정하였습니다.
+
+이럴 경우 하위 파드에서는 리미트 요청 보다 높이 요청할 경우 에러가 발생합니다.
+
+실습을하면서 확인해 보도록 하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 오브젝트를 생성
+# pod-rq-over-cpu의 경우 CPU 요청에서 오류
+# pod-rq-over-memory의 경우 MEMORY 요청에서 오류
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00007.yml
+namespace/namespace-rq created
+resourcequota/rq created
+Error from server (Forbidden): error when creating "assets/00004/00007.yml": pods "pod-rq-over-cpu" is forbidden: exceeded quota: rq, requested: requests.cpu=2, used: requests.cpu=0, limited: requests.cpu=1
+Error from server (Forbidden): error when creating "assets/00004/00007.yml": pods "pod-rq-over-memory" is forbidden: exceeded quota: rq, requested: requests.memory=110Mi, used: requests.memory=0, limited: requests.memory=100Mi
+
+# 다음 실습을 위하여 네임스페이스 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete namespace namespace-rq
+namespace "namespace-rq" deleted
+```
+
+다음은 파드의 개수를 제한하겠습니다
+
+설정 파일(`00008.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: List
+items:
+- apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: namespace-rq
+- apiVersion: v1
+  kind: ResourceQuota
+  metadata:
+    name: rq
+    namespace: namespace-rq
+  spec:
+    hard:              # 하드웨어 리미트 등록
+      pods: 2          # 파드의 최대 개수를 2로 지정
+- apiVersion: v1     # 동일한 파드 3개 생성
+  kind: Pod
+  metadata:
+    name: pod-rq-1
+    namespace: namespace-rq
+    labels:
+      app: node
+  spec:
+    containers:
+    - name: node
+      image: kim0lil/80700:v-1.0.0
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: pod-rq-2
+    namespace: namespace-rq
+    labels:
+      app: node
+  spec:
+    containers:
+    - name: node
+      image: kim0lil/80700:v-1.0.0
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: pod-rq-3
+    namespace: namespace-rq
+    labels:
+      app: node
+  spec:
+    containers:
+    - name: node
+      image: kim0lil/80700:v-1.0.0
+```
+
+설정 파일을 사용하여 오브젝트틀 생성해보겠습니다.
+
+파드의 리미트를 2로 주었으니 3번째 생성 시 오류가 발생할 것 입니다.
+
+```sh
+# 설정 파일을 사용하여 오브젝트 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00008.yml
+namespace/namespace-rq created
+resourcequota/rq created
+pod/pod-rq-1 created
+pod/pod-rq-2 created
+Error from server (Forbidden): error when creating "assets/00004/00008.yml": pods "pod-rq-3" is forbidden: exceeded quota: rq, requested: pods=1, used: pods=2, limited: pods=
+```
+
+리로스 할당에 관해서는 여기까지 다루도록 하겠습니다.
+
+자세한 내용은 [공식문서](https://kubernetes.io/docs)를 확인하세요.
+
+### Storage
+
+제한을 추가하였으면 이번에는 할당을 처리해보도록 하겠습니다.
+
+`CPU`와 `MEMORY`는 유한한 자원이며 비 상태성을 지니고 있습니다.
+
+하지만 이번에 다룰 저장소(`STORAGE`)의 경우는 상태를 지니고 있습니다.
+
+따라서 저장소는 관리 되어야 하며 원할 경우 할당하고 제한할 필요가 있습니다.
+
+#### Volumes
+
+파드내에 존재하는 컨테이너의 파일은 상태를 저장하지 않습니다.
+
+즉 컨테이너가 삭제 될 경우 이 컨테이너의 데이터를 다음 컨테이너에 사용할 수 없다는 말이 됩니다.
+
+컨테이너가 상태가 있다는 말은 문제가 발생할 경우 해결책을 찾기 어렵게 된다는 말이되며(`애플리케이션의 문제가 아니라 외부 요일의 문제일 수 있으므로`) 
+
+애플리케이션이 확장 할 경우 고려할 대상이 많아진다는 말이 됩니다.
+
+따라서 이전에 배운 쿠버네티스 객체인 `deployment`는 애플리케이션의 상태를 지니지 않는 통합 이미지로 배포하였습니다.
+
+그렇지만 상태를 지녀야 되는 컨테이너(`데이터베이스,파일서비스`)의 경우 컨테이너의 리로스 상태를 지속하여야 하므로 이럴 경우 볼륨을 사용하여 컨테이너의 상태를 처리합니다.
+
+볼륨은 크게 두가지로 분류합니다.
+
+1. 임시 볼륨(ephemeral volume) : 컨테이너 실행 시 임시로 생성 되며 컨테이너 삭제 시 같이 삭제 됩니다.
+2. 영구 볼륨(persistent volume) : 컨테이너와는 무관하게 원할 경우 생성, 삭제가 가능하며 다양한 볼륨 리스트를 지닙니다.
+
+먼저 간단하게 볼륨을 생성하여 호스트에 등록한 다음 원하는 파드의 볼륨으로 마운트 해보도록 하겠습니다.
+
+테스트를 위하여 `app.js`파일을 수정합니다.
+
+( 수정한 파일은 `00009`에 `app.js`입니다. )
+
+```js
+const http = require('http');
+const os   = require('os');
+const fs   = require('fs');
+const port = 8080;
+
+//- 서비스 처리기를 생성한다.
+const serverProcessHandler = (req, res) => {
+
+...
+    //- 날짜를 조회하기 위하여 요청 처리
+    else if ( req.url == '/today' )
+    {
+        var _dts = new Date().toString();
+
+        //- 날짜를 문자열로 host의 now로 저장
+        fs.writeFileSync('/host/now', _dts);
+    }
+
+    //- 전송할 데이터 셋팅    
+    var data = {
+        error_code    : 0, 
+        error_message : null, 
+        data          : 'Hello Kubernetes this is Container ID is '.concat(os.hostname()),
+        version       : 'beta',
+        now           : _dts  //- 현재 시간을 반환
+    }
+...
+```
+
+도커를 사용하여 이미지를 빌드 한 다음 서버로 전송합니다.
+
+```sh
+# 도커 이미지를 빌드
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker build -t kim0lil/80700:v-3.0.0 -f assets/00004/00009/Dockerfile assets/00004/00009
+
+# 도커 이미지를 전송
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker push kim0lil/80700:v-3.0.0
+```
+
+설정 파일(`00009.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-volumes
+  labels:
+    app: node
+spec:
+  containers:
+  - image: kim0lil/80700:v-3.0.0
+    name: node
+    volumeMounts:         # 마운트 할 볼륨 정보
+    - name: host-volume   # 마운트 할 볼륨 명칭 등록
+      mountPath: /host    # 마운트 할 경로 등록
+  volumes:                # 볼륨 정보
+  - name: host-volume     # 볼륨 명칭 등록
+    hostPath:             # 호스트 경로 정보
+      path: /host         # 호스트 경로 등록
+      type: ""            # 타입을 강제하지 않음
+```
+
+설정 파일은 쿠버네티스의 `/host`경로를 컨테이너의 `/host` 경로로 마운트 하고 있습니다.
+
+하지만 우리는 `minikube`를 사용하고 있으므로 실제 마운트 되는 경로는 `minikube`의 마운트 경로가 됩니다.
+
+따라서 테스트 시 `minikube`의 접속하여 실제 호스트 파일이 연결 되는지를 확인하도록 합니다.
+
+만일 실제 호스트 경로를 마운트 할 경우 아래와 같이 마운트 정보를 `minikube`에 연결 시켜 주어야 합니다.
+
+```sh
+# 호스트와 minikube 마운트 설정
+# ./bin/minikube.exe mount "호스트 경로":"컨테이너 경로"
+./bin/minikube.exe mount "C:/Users/admin/dev/80700/host":"/host"
+```
+
+돌아가서 애플리케이션을 생성한 다음 실습을 진행해보도록 하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 파드 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00009/00009.yml
+pod/pod-volumes created
+
+# 생성한 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -o wide
+NAME          READY   STATUS    RESTARTS   AGE   IP           NODE       ...
+pod-volumes   1/1     Running   0          15s   172.17.0.6   minikube   ...
+
+
+# 생성한 파드 상세 조회(마운트와 볼륨 확인)
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pods pod-volumes
+Name:         pod-volumes
+...
+    Mounts:
+      /host from host-volume (rw)
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-gpmzh (ro)
+Conditions:
+...
+Volumes:
+  host-volume:
+    Type:          HostPath (bare host directory volume)
+    Path:          /host
+    HostPathType:
+...
+
+# curl을 사용하여 파드의 테스트 실행
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-volumes -- curl localhost:8080/today
+Unable to use a TTY - input is not a terminal or the right kind of file
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this100   187    0   187    0     0  93500      0 --:--:-- --:--:-- --:--:-- 93500:25 GMT+0000 (Coordinated Universal Time)"}
+
+# minikube 접속
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ ./bin/minikube.exe ssh
+
+# minikube host의 파일이 정상적으로 쓰였는지 확인
+docker@minikube:~$ cat /host/now
+Wed Oct 12 2022 14:59:25 GMT+0000 (Coordinated Universal Time)
+
+# ctrl + c를 눌러 minikube 취소
+```
+
+볼륨을 마운트 할 경우 추가적으로 옵션을 사용하여 설정을 강제할 수 있습니다.
+
+가령 볼륨라인에 `type`속성 값으로 아래와 같이 빈 문자열(`""`)을 입력하였을 것입니다.
+
+```yml
+...
+  volumes:                # 볼륨 정보
+  - name: host-volume     # 볼륨 명칭 등록
+    hostPath:             # 호스트 경로 정보
+      path: /host         # 호스트 경로 등록
+      type: ""            # 타입을 강제하지 않음
+...
+```
+
+`type`속성의 경우 볼륨의 정보를 강제하는 것으로써 검증을 처리합니다.
+
+빈 문자열일 경우 타입 검증을 실시하지 않습니다.
+
+이제 다른 타입으로 변경해 보도록 하겠습니다.
+
+현재 `host`는 폴더구조로 되어 있습니다.
+
+따라서 올바른 타입은 `Directoy`가 됩니다.
+
+새로운 설정 파일(`00010.yml`)을 생성한 다음 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-volumes-dir
+  labels:
+    app: node
+spec:
+  containers:
+  - image: kim0lil/80700:v-3.0.0
+    name: node
+    volumeMounts:
+    - name: host-volume
+      mountPath: /host
+  volumes:
+  - name: host-volume
+    hostPath:
+      path: /host
+      type: Directory
+```
+
+기존과 동일하므로 아래와 같이 테스트를 진행하도록 합니다.
+
+```sh
+# 볼륨을 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pods pod-volumes-dir
+...
+Volumes:
+  host-volume:
+    Type:          HostPath (bare host directory volume)
+    Path:          /host
+    HostPathType:  Directory
+...
+```
+
+다음은 파일을 마운트 해보도록 하겠습니다.
+
+파일은 이전에 우리가 생성한 `/host/now`파일을 마운트 하겠습니다.
+
+설정 파일(`00011.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-volumes-file
+  labels:
+    app: node
+spec:
+  containers:
+  - image: kim0lil/80700:v-3.0.0
+    name: node
+    volumeMounts:
+    - name: host-volume-dir  # 디렉토리 마운트 (1)
+      mountPath: /host
+    - name: host-volume-file # 파일 마운트 (2)
+      mountPath: /now
+  volumes:
+  - name: host-volume-dir    # 디렉터리 볼륨 (1)
+    hostPath:
+      path: /host
+      type: Directory
+  - name: host-volume-file   # 파일 볼륨 (2)
+    hostPath:
+      path: /host/now
+      type: File
+```
+
+파일과 디렉터리를 동시에 등록 하였으므로 실습을 진행합니다.
+
+```sh
+# 설정 파일을 사용하여 볼륨 파드 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00011.yml
+pod/pod-volumes-file created
+
+# 생성한 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod pod-volumes-file
+NAME               READY   STATUS    RESTARTS   AGE
+pod-volumes-file   1/1     Running   0          108s
+
+# 파드 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod pod-volumes-file
+Name:         pod-volumes-file
+Namespace:    default
+...
+    Mounts:
+      /host from host-volume-dir (rw)
+      /now from host-volume-file (rw)
+...
+Volumes:
+  host-volume-dir:
+    Type:          HostPath (bare host directory volume)
+    Path:          /host
+    HostPathType:  Directory
+  host-volume-file:
+    Type:          HostPath (bare host directory volume)
+    Path:          /host/now
+    HostPathType:  File
+...
+
+# now 파일 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+kubectl exec -it pod-volumes-file -- /bin/cat /now
+Wed Oct 12 2022 15:20:27 GMT+0000 (Coordinated Universal Time)
+
+# 파드의 서비스 요청
+# 요청 시 /host의 now 파일을 현재 시간으로 수정
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+kubectl exec -it pod-volumes-file -- curl localhost:8080/today
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is pod-volumes-file","version":"beta","now":"Wed Oct 12 2022 15:24:21 GMT+0000 (Coordinated Universal Time)"}
+
+# now 파일 재 조회
+kubectl exec -it pod-volumes-file -- /bin/cat /now
+Wed Oct 12 2022 15:24:21 GMT+0000 (Coordinated Universal Time)
+```
