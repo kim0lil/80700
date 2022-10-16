@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: volume-empty-dir
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-3.0.0
+    volumeMounts:
+    - name: empty-volume # 마운트 시 사용할 볼륨 명칭
+      mountPath: /host   # 볼륨을 마운트 할 경로
+  volumes:               # 볼륨 정보
+  - name: empty-volume
+    emptyDir:            # 빈 디렉터리 정보
+      sizeLimit: 1Mi     # 사용 가능한 영역

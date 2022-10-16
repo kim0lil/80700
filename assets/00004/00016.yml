@@ -1,0 +1,58 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: user-storage-class
+reclaimPolicy: Delete
+provisioner: hostPath
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv
+  labels:
+    type: pv
+spec:
+  storageClassName: user-storage-class
+  capacity: 
+    storage: 1Gi
+  accessModes:
+  - ReadWriteOnce
+  hostPath:
+    path: /host
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc
+spec:
+  storageClassName: user-storage-class
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  selector:
+    matchLabels:
+      type: pv
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-3.0.0
+    volumeMounts:
+    - name: vol
+      mountPath: /host
+  volumes:
+  - name: vol
+    persistentVolumeClaim:
+      claimName: pvc

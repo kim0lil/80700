@@ -1,0 +1,5 @@
+apiVersion: storage.k8s.io/v1    # api 버전 등록
+kind: StorageClass               # 스토리지 클래스 등록
+metadata:                        
+  name: host-dir-storage-class   # 스토리지 클래스 명칭 등록
+provisioner: hostPath            # 스토리지 클래스의 지원 방법 등록

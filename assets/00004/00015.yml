@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-persistent-volume-claim
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-3.0.0
+    volumeMounts:                             # 볼륨을 마운트
+    - name: pvc                               # 볼륨 명칭 (볼륨 클레임 명칭 등록)
+      mountPath: /host                        # 볼륨 마운트 경로
+  volumes:
+  - name: pvc                                 # 볼륨 명칭 등록
+    persistentVolumeClaim:                    # 볼륨 클레임 정보  
+      claimName: persistent-host-volume-claim # 영구 볼륨 클레임 명칭 등록

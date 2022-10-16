@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: persistent-host-volume
+  labels:
+    type: host
+spec:
+  storageClassName: standard # 저장소 클래스 타입을 기본으로 등록
+  capacity:                  # 저장소 사이즈 정보
+    storage: 10Gi            # 저장소 사이즈를 등록
+  accessModes:               # 접근 모드 정보
+  - ReadWriteOnce            # 단일 노드에서의 읽기 쓰기 가능 ( RWO - ReadWriteOnce, ROX - ReadOnlyMany, RWX - ReadWriteMany, RWOP - ReadWriteOncePod )
+  hostPath:
+    path: /host

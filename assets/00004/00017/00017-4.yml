@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-log
+  labels:
+    app: app-log
+spec:
+  containers:
+  - image: kim0lil/80700:v-3.1.0
+    name: app
+    volumeMounts:
+    - name: host
+      mountPath: /gen     # 서비스앱은 `gen`으로 마운트 합니다.
+  - image: kim0lil/80700:v-3.1.1
+    name: log
+    volumeMounts:
+    - name: host
+      mountPath: /logs    # 로그앱는 `logs`으로 마운트 합니다.
+  volumes:
+  - name: host
+    hostPath:
+      path: /host

@@ -5429,6 +5429,12 @@ Error from server (Forbidden): error when creating "assets/00004/00008.yml": pod
 
 먼저 간단하게 볼륨을 생성하여 호스트에 등록한 다음 원하는 파드의 볼륨으로 마운트 해보도록 하겠습니다.
 
+##### hostPath
+
+다양한 컨테이너에서 호스트의 리소스에 접근하려면 `hostPath`를 사용합니다.
+
+![볼륨-1](./imgs/00021.png)
+
 테스트를 위하여 `app.js`파일을 수정합니다.
 
 ( 수정한 파일은 `00009`에 `app.js`입니다. )
@@ -5709,3 +5715,698 @@ kubectl exec -it pod-volumes-file -- curl localhost:8080/today
 kubectl exec -it pod-volumes-file -- /bin/cat /now
 Wed Oct 12 2022 15:24:21 GMT+0000 (Coordinated Universal Time)
 ```
+
+실습을 통해서 알 수 있듯 마운트 하는 경로에 따라서 원하는 방식으로 다양한 처리가 가능합니다.
+
+##### emptyDir
+
+호스트의 저장소를 사용하는 것이 `hostPath` 였다면 호스트의 임시 저장소인 `tmp` 저장소를 사용하는 저장소는 `emptyDir`입니다.
+
+`emptyDir`은 이름과 같이 임시 저장소를 사용하므로 메모리 영역에 따라서 메모리가 한없이 올라가기 때문에 필요시에 등록하여 사용합니다.
+
+이전과 동일하게 마운트를 진행해 보도록 하겠습니다.
+
+설정 파일(`00012.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: volume-empty-dir
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-3.0.0
+    volumeMounts:
+    - name: empty-volume # 마운트 시 사용할 볼륨 명칭
+      mountPath: /host   # 볼륨을 마운트 할 경로
+  volumes:               # 볼륨 정보
+  - name: empty-volume
+    emptyDir:            # 빈 디렉터리 정보
+      sizeLimit: 1Mi     # 사용 가능한 영역
+```
+
+생성한 설정 파일을 사용하여 볼륨 마운트를 실행해 보도록 하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 파드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00012.yml
+pod/volume-empty-dir created
+
+# 생성한 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods volume-empty-dir
+NAME               READY   STATUS    RESTARTS   AGE
+volume-empty-dir   1/1     Running   0          72s
+
+# 생성한 파드를 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod volume-empty-dir
+Name:         volume-empty-dir
+
+...
+
+    Mounts:
+      /host from empty-volume (rw)
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-hfjbn (ro)
+
+...
+
+Volumes:
+  empty-volume:
+    Type:       EmptyDir (a temporary directory that shares a pod\'s lifetime)
+    Medium:
+    SizeLimit:  1Mi
+
+...
+
+  Type    Reason     Age   From               Message
+  ----    ------     ----  ----               -------
+  Normal  Scheduled  9s    default-scheduler  Successfully assigned default/volume-empty-dir to minikube
+
+...
+
+```
+
+`emptyDir`은 이름에서 보면 알수 있듯이 볼륨의 정보를 빈 값으로 대체하여 컨테이너의 수명주기와 동일하게 사용합니다.
+
+필요에 의하여 컨테이너의 스크래치(사이즈를 줄이기 위하여)를 내야 하거나 컨테이너의 접근 가능한 임시 경로를 적용하고 싶을 경우 사용합니다.
+
+#### persistentVolumes
+
+저장소는 애플리케이션과는 별개로 동작하여야 합니다.
+
+즉 애플리케이션 개발자는 저장소를 관리할 필요가 없이 인프라구조에 따라서 원하는 저장소를 선택되어야 합니다.
+
+이전 볼륨을 생성하는 코드에 아래와 같은 설정 정보가 포함되어 있었을 것입니다.
+
+```yml
+...
+  containers:
+  - image: kim0lil/80700:v-3.0.0
+    name: node
+    volumeMounts:
+    - name: host-volume
+      mountPath: /host
+  volumes:
+  - name: host-volume
+    hostPath:
+      path: /host
+      type: Directory
+```
+
+설정 파일을 보면 알 수 있듯이 파드를 생성하는 구문에서 볼륨의 경로와 타입을 직접 지정하고 있는게 보일것입니다.
+
+이는 서버 인프라 개발자와 애플리케이션 개발자의 협업이 어려지게 됩니다.
+
+따라서 애플리케이션(파드)와 파드를 받쳐주는 스토리지(볼륨)이 따라 관리 되어야 함을 의미합니다.
+
+이번에 배울 영구 볼륨(`persistentVolumes`)은 쿠버네티스에서 이를 해결하는 방법입니다.
+
+영구 볼륨은 볼륨을 생성하는 방법과 세부 정보를 추상화합니다.
+
+즉 파드에게 원하는 방식의 스토리지를 제공(`Provisioning`)합니다.
+
+이는 원하는 파드에서 생성하는 것과는 다르게 볼륨 자체가 하나의 관리 대상이 되는 것입니다.
+
+따라서 아래와 같은 모양이 제공 되게 됩니다.
+
+![볼륨-2](./imgs/00022.png)
+
+또한 파드가 볼륨의 정보(`type`,`접속경로`)를 몰라도 원하는 파드를 요청하여 접속할 수 있으며 볼륨의 사용 권한 등을 추상화 하기 위하여 영구 볼륨을 사용합니다.
+
+실습을 위하여 설정 파일(`00013.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: persistent-host-volume
+  labels:
+    type: local
+spec:
+  storageClassName: standard # 저장소 클래스 타입을 기본으로 등록
+  capacity:                  # 저장소 사이즈 정보
+    storage: 10Gi            # 저장소 사이즈를 등록
+  accessModes:               # 접근 모드 정보
+  - ReadWriteOnce            # 단일 노드에서의 읽기 쓰기 가능 ( RWO - ReadWriteOnce, ROX - ReadOnlyMany, RWX - ReadWriteMany, RWOP - ReadWriteOncePod )
+  hostPath:
+    path: /host
+```
+
+`storageClassName`부터 알아 보겠습니다.
+
+`storageClassName`는 저장소의 타입명을 지정합니다.
+
+이는 다양한 저장소를 지원하므로 [공식문서](https://kubernetes.io/docs/concepts/storage/storage-classes/#provisioner)를 참조하세요.
+
+`capacity`는 저장소의 저장 용량을 선언적으로 할당합니다.
+
+`accessModes`는 파드에서 볼륨에 대한 접근 권한을 설정합니다.
+
+접근권한은 아래와 같습니다.
+
+1. ReadWriteOnce(RWO) : 단일 노드에서 읽기 쓰기로 마운트 됩니다.
+2. ReadOnlyMany(ROX) : 다량의 노드에서 읽기 전용으로 마운트 됩니다.
+3. ReadWriteMany(RWX) : 다량의 노드에서 읽기 쓰기로 마운트 됩니다.
+4. ReadWriteOncePod(RWOP) : 단일 파드에서 읽기 쓰기로 마운트 됩니다.
+
+이제 설정 파일을 사용하여 영구볼륨(`pesistentVolume`)을 생성해 보도록 하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 영구 볼륨을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00013.yml
+persistentvolume/persistent-host-volume created
+
+# 생성 된 영구 볼륨을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get persistentvolumes
+NAME                     CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM   STORAGECLASS   REASON   AGE
+persistent-host-volume   10Gi       RWO            Retain           Available           manual                  12s
+```
+
+이제 파드와 볼륨을 연결시켜 보겠습니다.
+
+하지만 이럴 경우 다시 파드가 볼륨의 정보를 알게 됩니다.
+
+따라서 쿠버네티스에서는 볼륨 클래임이라는 오브젝트를 사용하여 볼륨을 사용하는 객체를 관리합니다.
+
+![볼륨-3](./imgs/00023.png)
+
+이는 볼륨이 실제 파드와 분리 되도록 하는 효과가 있으며 추가적으로 볼륨 클레임에서 볼륨에 대한 접근 권한 관리 및 요청에 관한 제한들을 처리할 수 있게 됩니다.
+
+볼륨 클래임을 생성하기 위하여 설정 파일(`00014.yml`)을 생성한 다음 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: persistent-host-volume-claim
+spec:
+  storageClassName: standard # 저장소 클래스 타입을 기본으로 등록
+  accessModes:               # PersistentVolume에 등록한 접근 권한 요청    
+  - ReadWriteOnce            # 읽기/쓰기 모드로 요청
+  resources:                 # 저장소에서 리소스를 요청
+    requests:                # 요청 정보
+      storage: 10Gi          # 10기가 저장소 요청
+  selector:                  # 선택자 등록
+    matchLabels:             # 레이블 선택
+      type: host             # type=host 인 persistentVolume 선택
+```
+
+만일 레이블이 같은 영구 볼륨(`PersistentVolume`)이 있을 경우 `persistentVolumeclaim`은 요청 모드와 요청 가능 저장소를 확인하여 연결을 시도 합니다.
+
+설정 파일을 사용하여 실습을 진행합니다.
+
+```sh
+# 설정 파일을 사용하여 볼륨 클레임을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00014.yml
+persistentvolumeclaim/persistent-host-volume-claim created
+
+# 생성 된 볼륨 클레임을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get persistentvolumeclaim
+NAME                           STATUS   VOLUME                   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+persistent-host-volume-claim   Bound    persistent-host-volume   10Gi       RWO            standard       9s
+
+# 볼륨 클레임이 볼륨과 연결 되어 있는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe persistentvolumeclaim
+Name:          persistent-host-volume-claim
+Namespace:     default
+StorageClass:  standard
+Status:        Bound
+Volume:        persistent-host-volume
+Labels:        <none>
+Annotations:   pv.kubernetes.io/bind-completed: yes
+               pv.kubernetes.io/bound-by-controller: yes
+Finalizers:    [kubernetes.io/pvc-protection]
+Capacity:      10Gi
+Access Modes:  RWO
+VolumeMode:    Filesystem
+Used By:       <none>
+Events:        <none>
+
+# 볼륨을 조회 하여 볼륨 클레임과 연결 되어 있는지 확인
+$ kubectl get persistentvolume
+NAME                     CAPACITY   ...   CLAIM                                  STORAGECLASS   REASON   AGE
+persistent-host-volume   10Gi       ...   default/persistent-host-volume-claim   standard                92s
+```
+
+영구 볼륨과 볼륨 클레임이 정상적으로 연결되었다면 이번에는 볼륨 클레임과 파드를 연결 시켜 보겠습니다.
+
+파드를 생성하는 설정 파일(`00015.yml`)을 생성한 다음 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-persistent-volume-claim
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-3.0.0
+    volumeMounts:                             # 볼륨을 마운트
+    - name: pvc                               # 볼륨 명칭
+      mountPath: /host                        # 볼륨 마운트 경로
+  volumes:
+  - name: pvc                                 # 볼륨 명칭 등록
+    persistentVolumeClaim:                    # 볼륨 클레임 정보  
+      claimName: persistent-host-volume-claim # 영구 볼륨 클레임 명칭 등록
+```
+
+설정 파일을 사용하여 파드를 생성 하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 파드 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00015.yml
+pod/pod-with-persistent-volume-claim created
+
+# 파드 정보를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod pod-with-persistent-volume-claim
+NAME                               READY   STATUS    RESTARTS   AGE
+pod-with-persistent-volume-claim   1/1     Running   0          19s
+
+# 파드를 상세 조회 
+# 볼륨과 볼륨 클레임 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod pod-with-persistent-volume-claim
+Name:         pod-with-persistent-volume-claim
+...
+Containers:
+...
+    Mounts:
+      /host from pvc (rw)
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-nrck5 (ro)
+...
+Volumes:
+  pvc:
+    Type:       PersistentVolumeClaim (a reference to a PersistentVolumeClaim in the same namespace)
+    ClaimName:  persistent-host-volume-claim
+    ReadOnly:   false
+...
+
+# curl 을 사용하여 테스트 실행
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-persistent-volume-claim -- curl localhost:8080/today
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is pod-with-persistent-volume-claim","version":"beta","now":"Sat Oct 15 2022 09:01:11 GMT+0000 (Coordinated Universal Time)"}
+
+# 요청 결과 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-persistent-volume-claim -- cat /host/now
+Sat Oct 15 2022 09:01:11 GMT+0000 (Coordinated Universal Time)
+
+# minikube로 접속하여 호스트 정보 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ ./bin/minikube ssh
+
+docker@minikube:~$ cat /host/now
+Sat Oct 15 2022 09:01:11 GMT+0000 (Coordinated Universal Time)
+
+# minikube 접속 종료
+docker@minikube:~$ exit
+```
+
+우리는 영구 볼륨을 등록하고 영구 볼륨 클레임을 생성하고 파드에 연결하는 것 까지 모두 실습해 보았습니다.
+
+다음은 실습을 통하여 볼륨을 더 이해해보도록 하겠습니다.
+
+![볼륨-4](./imgs/00024.png)
+
+`app` 서비스는 현재 서비스를 실행합니다.
+
+이 때 `/gen`파일에 실행 결과를 등록합니다.
+
+`log` 서비스는 실행 결과를 관리자에게 반환하는 서비스를 제공합니다.
+
+먼저 `app.js`파일을 수정한 다음 소스코드를 등록합니다.
+
+```js
+const http = require('http');
+const os   = require('os');
+const fs   = require('fs');
+const port = 8080;
+const genDir = '/gen';
+
+var seq;
+
+//- 고유 순번을 생성
+try
+{
+    seq = (+fs.readFileSync(genDir.concat('/seq')).toString());
+}
+catch(e)
+{
+    seq = 0;
+}
+
+//- 서비스 처리기를 생성한다.
+const serverProcessHandler = (req, res) => {
+
+    var _dts = new Date().toString();
+
+    if(req.url == '/')
+    {
+        seq = seq + 1;
+
+        //- 날짜를 문자열로 [gen]의 [now]로 저장
+        //- 고유 번호를 부여하여 매번 번호를 생성
+        fs.writeFileSync ( genDir.concat('/log',seq) , _dts );
+        fs.writeFileSync ( genDir.concat('/seq')     , seq.toString() );
+
+        //- 전송할 데이터 셋팅
+        var data = {
+            seq           : seq,
+            error_code    : 0,
+            error_message : null,
+            data          : 'Hello Kubernetes this is Container ID is '.concat(os.hostname()),
+            version       : 'beta',
+            now           : _dts  //- 현재 시간을 반환
+        }
+
+        //- 헤더 및 데이터 전송
+        res.writeHead(200, {'Content-Type': 'application/json'});
+        
+        res.end(JSON.stringify(data));
+    }
+} 
+
+const serverOpenHandler = function() {
+
+    console.log(`server is running at http://127.0.0.1:${port}`);
+}
+
+//- 서버를 생성한다.
+const www = http.createServer(serverProcessHandler);
+
+//- 생성한 서버를 오픈한다.
+www.listen(port, serverOpenHandler);
+```
+
+다음은 로그를 관리하는 파일(`log.js`) 을 생성한 다음 소스코드를 등록합니다.
+
+```js
+const http = require('http');
+const fs   = require('fs');
+const port = 8090;
+
+const logDir = '/logs';
+
+//- 서비스 처리기를 생성한다.
+const serverProcessHandler = (req, res) => {
+
+    var arrUrl = req.url.split('?');
+    var strUrl = arrUrl[0];
+
+    if (strUrl == '/') 
+    {
+        var logs = fs.readdirSync(logDir);
+
+        var table  = '<table border="1">';
+            table += '    <tr>';
+            table += '        <th>id</th>';
+            table += '        <th>content</th>';
+            table += '        <th>delete</th>';
+            table += '    <tr>';
+
+        //- 로그를 순회 한다.
+        for (var seq in logs)
+        {
+            var log = logs[seq];
+
+            if ( log == 'seq' )
+            {
+              continue;
+            }
+
+            var _id = log.substring(3, log.length);
+
+            var rData = fs.readFileSync(logDir.concat('/',log)).toString();
+
+            table += '    <tr>';
+            table += '        <td>'+_id+'</td>';
+            table += '        <td>'+rData+'</td>';
+            table += '        <td>';
+            table += '            <a href="/delete?seq='+_id+'">delete</a>';
+            table += '        </th>';
+            table += '    <tr>';
+        }
+
+        table += '</table>';
+
+        res.end(table);
+    }
+    else if (strUrl == '/delete')
+    {
+        var seq = arrUrl[1].split('=')[1];
+
+        var rData = fs.rmSync(logDir.concat('/log',seq));
+
+        //- redirect home
+        res.writeHead(302, {
+            'Location': '/'
+        });
+
+        res.end();
+    }
+} 
+
+const serverOpenHandler = function() {
+
+    console.log(`server is running at http://127.0.0.1:${port}`);
+}
+
+//- 서버를 생성한다.
+const www = http.createServer(serverProcessHandler);
+
+//- 생성한 서버를 오픈한다.
+www.listen(port, serverOpenHandler);
+```
+
+애플리케이션을 빌드한 다음 서버로 푸시 해 보도록 하겠습니다.
+
+```sh
+# 이미지를 빌드(앱)
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker build -t kim0lil/80700:v-3.1.0 -f assets/00004/00017/DockerfileApp assets/00004/00017/
+...
+# 이미지를 빌드(로그)
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker build -t kim0lil/80700:v-3.1.1 -f assets/00004/00017/DockerfileLog assets/00004/00017/
+...
+# 서버로 이미지를 푸시(앱)
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker push kim0lil/80700:v-3.1.0
+
+# 서버로 이미지를 푸시(로그)
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker push kim0lil/80700:v-3.1.1
+```
+
+볼륨 테스트를 위하여 볼륨을 생성합니다.
+
+이번에는 새로운 스토리지클래스(`StorageClass`)를 생성한 다음 연결시켜 보도록 하겠습니다
+
+스토리지 클래스는 스토리지를 관리하는 정보를 추상적으로 관리할 수 있는 객체입니다.
+
+이전에는 쿠버네티스의 기본 `standard`를 사용하였습니다.
+
+( `StorageClass`는 `storage.k8s.io/v1`을 따르고 있습니다. )
+
+```yml
+apiVersion: storage.k8s.io/v1    # api 버전 등록
+kind: StorageClass               # 스토리지 클래스 등록
+metadata:                        
+  name: empty-dir-storage-class  # 스토리지 클래스 명칭 등록
+provisioner: emptyDir            # 스토리지 클래스의 지원 방법 등록
+```
+
+다음은 이 스토리지 클래스를 사용하는 볼륨 파일(`00017-2.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-log
+spec:
+  storageClassName: host-dir-storage-class
+  capacity:
+    storage: 10Gi
+  accessModes:
+  - ReadWriteOnce
+  hostPath:
+    path: /host
+```
+
+이제 영구 볼륨 클래임을 생성하여 파드와 연결할 준비를 합니다.
+
+영구 볼륨 클래임 설정 파일(`00017-3.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-log
+  labels:
+    type: host
+spec:
+  storageClassName: host-dir-storage-class
+  capacity:
+    storage: 10Gi
+  accessModes:
+  - ReadWriteOnce
+  hostPath:
+    path: /host
+```
+
+여기까지는 기존과 동일합니다.
+
+영구 볼륨과 영구 볼륨 클래임을 사용하여 파드에 서비스를 제공해 보도록 하겠습니다.
+
+이전 우리가 만든 두 앱을 사용하여 파드의 설정 파일(`00017-4.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-log
+  labels:
+    app: app-log
+spec:
+  containers:
+  - image: kim0lil/80700:v-3.1.0
+    name: app
+    volumeMounts:
+    - name: host
+      mountPath: /gen     # 서비스앱은 `gen`으로 마운트 합니다.
+  - image: kim0lil/80700:v-3.1.1
+    name: log
+    volumeMounts:
+    - name: host
+      mountPath: /logs    # 로그앱는 `logs`으로 마운트 합니다.
+  volumes:
+  - name: host
+    hostPath:
+      path: /host
+```
+
+추가적으로 외부로 서비스를 하기 위하여 서비스 설정 파일(`00017-5.yml`)을 생성 한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-log
+spec:
+  selector:
+    app: app-log
+  type: LoadBalancer
+  ports:
+  - name: app
+    port: 8080
+    targetPort: 8080
+  - name: log
+    port: 8090
+    targetPort: 8090
+```
+
+이제 테스트를 진행 해보도록하겠습니다.
+
+먼저 스토리지 클래스와 영구 볼륨 그리고 영구 볼륨 클래임을 생성합니다.
+
+```sh
+# 스토리지 클래스 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00017/00017-1.yml
+storageclass.storage.k8s.io/host-dir-storage-class created
+
+# 영구 볼륨 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00017/00017-2.yml
+persistentvolume/pv-log created
+
+# 영구 볼륨 클래임 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00017/00017-3.yml
+persistentvolumeclaim/pvc-log created
+
+# 생성한 오브젝트를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get storageclass,persistentvolume,persistentvolumeclaim
+NAME                                                 PROVISIONER   RECLAIMPOLICY   VOLUMEBINDINGMODE   ALLOWVOLUMEEXPANSION   AGE
+storageclass.storage.k8s.io/host-dir-storage-class   hostPath      Delete          Immediate           false                  29s
+
+NAME                      CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM             STORAGECLASS             REASON   AGE
+persistentvolume/pv-log   10Gi       RWO            Retain           Bound    default/pvc-log   host-dir-storage-class            27s
+
+NAME                            STATUS   VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS             AGE
+persistentvolumeclaim/pvc-log   Bound    pv-log   10Gi       RWO            host-dir-storage-class   23s
+```
+
+다음으로 파드와 서비스를 생성합니다.
+
+```sh
+# 파드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00017/00017-4.yml
+pod/app-log created
+
+# 서비스를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00017/00017-5.yml
+service/svc-log created
+
+# 생성한 서비스와 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod,service
+NAME          READY   STATUS    RESTARTS   AGE
+pod/app-log   2/2     Running   0          13s
+
+NAME                 TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)                         AGE
+service/kubernetes   ClusterIP      10.96.0.1        <none>        443/TCP                         2m5s
+service/svc-log      LoadBalancer   10.110.102.240   <pending>     8080:31246/TCP,8090:30037/TCP   10s
+
+# 서비스를 오픈합니다.
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ bin/minikube.exe tunnel
+✅  Tunnel successfully started
+
+📌  NOTE: Please do not close this terminal as this process must stay alive for the tunnel to be accessible ...
+
+🏃  svc-log 서비스의 터널을 시작하는 중
+
+# 다른 창을 오픈하여 계속
+# 서비스의 EXTERNAL-IP 가 할당 되었는지 확인 후 브라우져를 열어
+# EXTERNAL-IP:8080르로 접속
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+NAME         TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)                         AGE
+kubernetes   ClusterIP      10.96.0.1        <none>        443/TCP                         3m38s
+svc-log      LoadBalancer   10.110.102.240   127.0.0.1     8080:31246/TCP,8090:30037/TCP   103s
+```
+
+접근하면 아래와 같은 로그를 확인 할 수 있습니다.
+
+![볼륨-5](./imgs/00025.png)
+
+다음은 로그를 확인해 보겠습니다.
+
+로그의 포트는 `8090`입니다.
+
+![볼륨-6](./imgs/00026.png)
+
+delete 버튼을 클릭하여 잘 삭제 된다면 테스트가 종료 되는 것입니다.
+
+이로써 하나 이상의 컨테이너의 볼륨을 연결하는 실습을 하였습니다.
+
+더 자세한 사항은 애플리케이션 응용에서 다루도록 할 것이며
+
+다음은 설정과 보안과 관련되어 다루도록 하겠습니다.
