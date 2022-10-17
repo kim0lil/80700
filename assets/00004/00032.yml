@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-downward-volume
+  labels:
+    app: node
+    version: 1.0.0
+  annotations:
+    app.version: 1.0.0
+    app.status: normal
+spec:
+  containers:
+  - name: node-container
+    image: kim0lil/80700:v-1.0.0
+    resources:
+      limits:
+        ephemeral-storage: 1Mi
+      requests:
+        ephemeral-storage: 1Mi
+    volumeMounts:                                   # 볼륨 마운트
+    - name: downward-api                            # 볼륨 명칭
+      mountPath: /env                               # 볼륨 경로
+  volumes:
+  - name: downward-api                              # 볼륨 정보
+    downwardAPI:                                    # downward api 정보
+      items:                                        # api 리스트
+      - path: resource_limit_storage                # 최대 용량
+        resourceFieldRef: 
+          containerName: node-container
+          resource: limits.ephemeral-storage
+      - path: resource_request_storage              # 최대 요청 용량
+        resourceFieldRef:
+          containerName: node-container
+          resource: requests.ephemeral-storage
+      - path: pod_name                              # 파드 명
+        fieldRef:
+          fieldPath: metadata.name
+      - path: pod_namespace
+        fieldRef:
+          fieldPath: metadata.namespace             # 네임스페이스명
+      - path: labels
+        fieldRef:
+          fieldPath: metadata.labels                # 레이블명
+      - path: annotations
+        fieldRef: 
+          fieldPath: metadata.annotations           # 어노테이션명

@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-downward
+  labels:                       # 레이블 정보
+    app: node
+    version: 1.0.01
+  annotations:                  # 어노테이션 정보
+    app.version: 1.0.0
+    app.status: normal
+spec:
+  containers:
+  - name: app-node
+    image: kim0lil/80700:v-1.0.0
+    resources:
+      limits:
+        ephemeral-storage: 1Mi
+      requests:
+        ephemeral-storage: 1Mi
+    env:
+    - name: ENV_RESOURCE_LIMIT_STORAGE         # 최대 저장소
+      valueFrom:
+        resourceFieldRef:
+          resource: limits.ephemeral-storage
+    - name: ENV_RESOURCE_REQUEST_STORAGE       # 요청 저장소
+      valueFrom:
+        resourceFieldRef:
+          resource: requests.ephemeral-storage
+    - name: ENV_POD_NAME                       # 파드 명칭
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+    - name: ENV_POD_NAMESPACE                  # 네임스페이스,
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.namespace
+    - name: ENV_POD_NODE_NAME                  # 파드 명칭
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+    - name: ENV_SERVICE_ACCOUNT                # 노드 명칭
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.serviceAccountName
+    - name: ENV_POD_IP                         # 서비스 계정
+      valueFrom:
+        fieldRef:
+          fieldPath: status.podIP
+    - name: ENV_HOST_IP                        # 호스트 IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.hostIP
+    - name: ENV_LABELS_APP                     # 레이블 정보
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['app']

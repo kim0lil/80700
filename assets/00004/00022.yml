@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-configmap-file
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    env:
+    - name: app.version
+      valueFrom:
+        configMapKeyRef:
+          name: configmap-file
+          key: application.version
+    volumeMounts:                      # 마운트 정보
+    - name: config-file                # 볼륨 명칭을 등록
+      mountPath: /config               # 볼륨의 경로를 등록
+  volumes:
+  - name: config-file                  # 볼륨으로 등록
+    configMap:                         # 볼륨의 기준은 설정 파일 등록
+      name: configmap-file             # 설정 맵 명칭을 등록
+      items:
+      - key: application.properties    # 설정 맵에 등록한 키 값
+        path: app.properties           # 설정 맵에 등록한 값을 사용하여 생성할 파일 명

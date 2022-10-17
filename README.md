@@ -6410,3 +6410,1012 @@ delete 버튼을 클릭하여 잘 삭제 된다면 테스트가 종료 되는 �
 더 자세한 사항은 애플리케이션 응용에서 다루도록 할 것이며
 
 다음은 설정과 보안과 관련되어 다루도록 하겠습니다.
+
+#### ConfigMap
+
+애플리케이션을 사용할 때 설정값을 필수적으로 등록 됩니다.
+
+이는 외부 환경에서 주입해 주거나 설정값을 기준으로 애플리케이션이 동작하기도 합니다.
+
+이를 사용하여 애플리케이션의 동작을 관리하거나 처리하는데 사용하는 설정값을 등록해 보고 등록 된 설정 값을 읽어 오는 기능을 처리해 보도록 하겠습니다.
+
+먼저 간단하게 파드에 설정값을 등록하겠습니다.
+
+설정 파일(`00018.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-environments
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    env:                          # 환경 변수 정보
+    - name: application_version   # 설정 값 명칭
+      value: 1.0.0                # 설정 값
+```
+
+설정값은 `env`속성값을 사용하여 등록할 수 있습니다.
+
+이제 설정 파일을 사용하여 파드를 생성한 다음 원하는 설정 정보가 실행 환경에 잘 적용 되었는지 실습해 보겠습니다.
+
+```sh
+# 설정 파일을 사용하여 파드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00018.yml
+pod/pod-with-environments created
+
+# 생성한 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod pod-with-environments
+NAME                    READY   STATUS    RESTARTS   AGE
+pod-with-environments   1/1     Running   0          22s
+
+# 파드를 상세 조회 하여 환경 변수가 적용 되어 있는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod pod-with-environments
+Name:         pod-with-environments
+...
+    Environment:
+      application_version:  1.0.0
+...
+
+# 컨테이너를 실행하여 환경 변수를 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-environments -- env
+...
+application_version=1.0.0
+...
+```
+
+하지만 `env` 속성을 사용하면 원하지 않게 파드에 고유한 속성값으로 판정이 되어 원하지 않게 설정값과 파드 깊은 관계를 가지게 됩니다.
+
+따라서 이러한 의존성 관계를 제거하기 위하여 설정 맵과 같은 설정 오브젝트들을 사용하여 설정을 분리합니다.
+
+이 설정 맵(`ConfigMap`)은 보안과는 상관없는 설정값을 키-값으로 등록하는데 사용합니다.
+
+설정 맵은 `API`가 관리하는 리소스 객체로써 설정 맵을 사용하여 컨테이너를 구성하거나 응용프로그램에서 사용할 수 있도록 있습니다.
+
+설정 맵은 큰 데이터를 저장하는데 사용하지 않으면 `1MB`내에 작은양의 데이터를 보관하는데 유리합니다.
+
+이제 간단하게 설정 맵(`configMap`)을 생성해 보면서 이해를 돕도록 하겠습니다.
+
+설정 파일(`00019.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: ConfigMap              # 설정 맵으로 등록
+metadata:
+  name: configmap            # 설정 맵의 명칭 등록
+data:
+  application_version: 1.0.0 # 설정값 등록
+```
+
+설정 맵을 사용하는 파드를 생성하겠습니다.
+
+설정 파일(`00020.yml`)을 생성 한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-configmap
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    env:
+    - name: app_version            # 환경에 등록할 명칭
+      valueFrom:                   # 값을 가져올 정보
+        configMapKeyRef:           # 설정 맵 정보
+          name: configmap          # 설정 맵 명칭
+          key: application_version # 설정 맵의 등록 된 속성 값
+```
+
+이번에는 설정 맵을 등록한 다음 파드의 환경 정보로 등록해 보도록 하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 설정 맵을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00019.yml
+configmap/configmap created
+
+# 설정 맵을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get configmap configmap
+NAME        DATA   AGE
+configmap   1      15s
+
+# 생성한 설정 맵을 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe configmap configmap
+Name:         configmap
+Namespace:    default
+Labels:       <none>
+Annotations:  <none>
+
+Data
+====
+application_version:
+----
+1.0.0
+
+BinaryData
+====
+
+Events:  <none>
+
+# 설정맵을 사용하여 파드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00020.yml
+pod/pod-with-configmap created
+
+# 생성한 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods pod-with-configmap
+NAME                 READY   STATUS    RESTARTS   AGE
+pod-with-configmap   1/1     Running   0          12s
+
+# 환경 정보 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod pod-with-configmap
+Name:         pod-with-configmap
+...
+    Environment:
+      app_version:  <set to the key 'application_version' of config map 'configmap'>  Optional: false
+...
+
+# 컨테이너 내부에 환경정보를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-configmap -- env
+...
+app_version=1.0.0
+...
+```
+
+이번에는 설정 맵에 파일 정보를 등록해보도록 하겠습니다.
+
+설정 파일(`00021.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: configmap-file
+data:
+  application.properties: | # [application.properties] 명칭을 사용
+    app.name = node
+    app.version = 1.0.0
+    app.state = normal
+    app.level = 1
+  application.version: 1.0.0
+```
+
+다음은 설정 맵을 사용하는 파드를 생성하기 위하여 설정 파일(`00022.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-configmap-file
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    env:
+    - name: app.version
+      valueFrom:
+        configMapKeyRef:
+          name: configmap-file
+          key: application.version
+    volumeMounts:                      # 마운트 정보
+    - name: config-file                # 볼륨 명칭을 등록
+      mountPath: /config               # 볼륨의 경로를 등록
+  volumes:
+  - name: config-file                  # 볼륨으로 등록
+    configMap:                         # 볼륨의 기준은 설정 파일 등록
+      name: configmap-file             # 설정 맵 명칭을 등록
+      items:
+      - key: application.properties    # 설정 맵에 등록한 키 값
+        path: app.properties           # 설정 맵에 등록한 값을 사용하여 생성할 파일 명
+```
+
+생성한 설정 파일을 사용하여 설정 맵을 파일로 생성 되는지 실습을 진행합니다.
+
+```sh
+# 설정 파일을 사용하여 설정 맵을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00021.yml
+configmap/configmap-file created
+
+# 설정 파일을 사용하여 파드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00022.yml
+pod/pod-with-configmap-file created
+
+# 생성한 설정 맵 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get configmap configmap-file
+NAME             DATA   AGE
+configmap-file   2      44s
+
+# 생성한 설정 맵 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe configmap configmap-file
+Name:         configmap-file
+Namespace:    default
+Labels:       <none>
+Annotations:  <none>
+
+Data
+====
+application.properties:
+----
+app.name = node
+app.version = 1.0.0
+app.state = normal
+app.level = 1
+
+application.version:
+----
+1.0.0
+
+BinaryData
+====
+
+Events:  <none>
+
+# 생성한 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod pod-with-configmap-file
+NAME                      READY   STATUS    RESTARTS   AGE
+pod-with-configmap-file   1/1     Running   0          52s
+
+# 생성한 파드 상세 조회 (볼륨)
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod pod-with-configmap-file
+Name:         pod-with-configmap-file
+...
+    Mounts:
+      /config from config-file (rw)
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-w7z6d (ro)
+...
+Volumes:
+  config-file:
+    Type:      ConfigMap (a volume populated by a ConfigMap)
+    Name:      configmap-file
+    Optional:  false
+...
+
+# 컨테이너 내부에 [app.properties] 파일이 정상적으로 등록 되었는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-configmap-file -- cat /config/app.properties
+app.name = node
+app.version = 1.0.0
+app.state = normal
+app.level = 1
+```
+
+이번에는 설정 맵을 설정 파일을 사용하지 않고 생성하겠습니다.
+
+명령어를 사용한 쿠버네티스 객체 생성 중 실제로 많이 사용하는 방법이니 설명하고 넘어 가겠습니다.
+
+설정 맵을 생성하는 구문은 아래와 같습니다.
+
+```sh
+# 키=값을 가진 설정 맵을 생성
+kubectl create configmap [설정 맵 명칭] --from-literal key1=value1 --from-literal key2=value2
+
+# 파일 정보를 가진 설정 맵을 생성
+kubectl create configmap [설정 맵 명칭] --from-file 파일경로1 --from-file 파일경로2
+
+# 섞어서 사용할 경우
+kubectl create configmap [설정 맵 명칭] --from-literal key1=value1  --from-file 파일경로1
+```
+
+이전 설정 맵을 사용한 파드 설정 파일(`00020.yml`)과 설정 맵 파일을 사용한 파드 설정파일(`00021.yml`)을 재 사용 해보도록 하겠습니다.
+.
+
+설정 파일 실습을 위하여 설정 파일(`00023.json`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```json
+{
+    "app" : {
+        "name" : "node",
+        "version" : "1.0.0",
+        "state": "normal",
+        "level" : "1"
+    }
+}
+```
+
+실습을 위하여 이전 설정 맵과 파드를 제거한 다음 새로운 `configmap`와 `configmap-file`을 생성해 보도록 하겠습니다.
+
+그리고 다음으로 설정 맵 파일(`00024.yml`)을 아래와 같이 변경합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-configmap-file
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    volumeMounts:
+    - name: cfile
+      mountPath: /config
+  volumes:
+  - name: cfile
+    configMap:
+      name: configmap-file
+      items:
+      - key: 00023.json    # 00023.json 파일을
+        path: app.json     # app.json 파일로 생성
+```
+
+설정 파일을 사용하여 실습을 진행하겠습니다.
+
+```sh
+# 이전 설정 맵과 파드를 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete pod,configmap --all
+
+# 명령문을 사용하여 설정 맵을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create configmap configmap --from-literal application_version=1.0.1
+configmap/configmap created
+
+# 설정 파일을 사용하여 파드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00020.yml
+pod/pod-with-configmap created
+
+# 생성 된 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod pod-with-configmap
+NAME                 READY   STATUS    RESTARTS   AGE
+pod-with-configmap   1/1     Running   0          18s
+
+# 생성 된 파드를 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod pod-with-configmap
+Name:         pod-with-configmap
+...
+    Environment:
+      app_version:  <set to the key 'application_version' of config map 'configmap'>  Optional: false
+...
+
+# 파드의 환경 정보를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-configmap -- env
+...
+app_version=1.0.1
+...
+
+# 명령문을 사용하여 설정 파일을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create configmap configmap-file --from-file assets/00004/00023.json
+configmap/configmap-file created
+
+# 생성한 설정 맵 파일 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get configmap configmap-file
+NAME             DATA   AGE
+configmap-file   1      8s
+
+# 생성한 설정 맵 파일 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe configmap configmap-file
+Name:         configmap-file
+Namespace:    default
+Labels:       <none>
+Annotations:  <none>
+
+Data
+====
+00023.json:
+----
+{
+    "app" : {
+        "name" : "node",
+        "version" : "1.0.0",
+        "state": "normal",
+        "level" : "1"
+    }
+}
+
+BinaryData
+====
+
+Events:  <none>
+
+# 설정 파일을 사용하여 파드 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00024.yml
+pod/pod-with-configmap-file created
+
+# 생성 된 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod pod-with-configmap-file
+NAME                      READY   STATUS    RESTARTS   AGE
+pod-with-configmap-file   1/1     Running   0          12s
+
+# 생성 된 파드 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod pod-with-configmap-file
+Name:         pod-with-configmap-file
+...
+    Mounts:
+      /config from cfile (rw)
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-vbjr5 (ro)
+...
+Volumes:
+  cfile:
+    Type:      ConfigMap (a volume populated by a ConfigMap)
+    Name:      configmap-file
+    Optional:  false
+...
+
+# 설정 파일로 배포 되는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-configmap-file -- cat /config/app.json
+{
+    "app" : {
+        "name" : "node",
+        "version" : "1.0.0",
+        "state": "normal",
+        "level" : "1"
+    }
+}
+
+# 실습이 완료 된 오브젝트를 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete pod,configmap --all
+...
+
+```
+
+#### Secrets
+
+`Secrets`는 토큰, 키 와 같은 보안이 필요한 정보를 등록합니다.
+
+`Secrets`은 기전 설정 맵(`ConfigMap`)과 유사하며 실제 사용하는 방법도 비슷합니다.
+
+실습을 위하여 먼저 `admin`을 `base64`로 변환합니다.
+
+```sh
+echo -n 'admin' | base64
+YWRtaW4=
+```
+
+`Secrets` 설정 파일(`00025.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: secret-data
+data:
+  username: YWRtaW4=
+```
+
+Secret을 사용할 파드의 설정 파일(`00026.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-secret
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    env:                            # 환경 변후 정보
+    - name: GLOBAL_USER_NAME        # 환경 변수 명칭
+      valueFrom:                    # 환경 변수를 가져올 곳
+        secretKeyRef:               # 비밀 변수 정보
+          name: secret-data         # Secret 명칭
+          key: username             # Secret 명칭
+```
+
+이제 파드를 생성하고 생성 된 파드의 설정 정보를 확인합니다.
+
+```sh
+# 설정 파일을 사용하여 Secret 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00025.yml
+secret/secret-data created
+
+# 설정 파일을 사용하여 파드 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00026.yml
+pod/pod-with-secret created
+
+# 생성한 파드와 Secret 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get secret,pod
+NAME                 TYPE     DATA   AGE
+secret/secret-data   Opaque   1      13s
+
+NAME                  READY   STATUS    RESTARTS   AGE
+pod/pod-with-secret   1/1     Running   0          7s
+
+# Secret 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe secret secret-data
+Name:         secret-data
+...
+    Environment:
+      GLOBAL_USER_NAME:  <set to the key 'username' in secret 'secret-data'>  Optional: false
+...
+
+# 설정 파일로 등록 된 환경 변수 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-secret -- env
+...
+GLOBAL_USER_NAME=admin
+...
+```
+
+설정 맵과 동일하게 파일로 지정하여 볼륨으로 등록 할 수 있습니다.
+
+이번에는 파일을 사용하여 Secret을 생성하겠습니다.
+
+먼저 실습을 위하여 폴더(`00027`)를 생성한 다음 아래 명령어를 통하여 파일을 생성합니다.
+
+다음으로 명령문을 사용하여 Secret을 생성합니다.
+
+```sh
+# app 파일을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ echo app.name=node | base64 > assets/^C004/00027/app.properties
+
+# assets/00004/00027/폴더를 Secret으로 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create secret generic secret-file --from-file assets/00004/00027/
+secret/secret-file created
+
+# 생성한 Secret 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get secret secret-file
+NAME          TYPE     DATA   AGE
+secret-file   Opaque   1      62s
+
+# 생성한 Secret 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe secret secret-file
+Name:         secret-file
+Namespace:    default
+Labels:       <none>
+Annotations:  <none>
+
+Type:  Opaque
+
+Data
+====
+app.properties:  21 bytes
+
+```
+
+이제 이 Secret을 사용하는 파드를 생성하겠습니다.
+
+새로운 설정 파일(`00028.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+이번에는 `/etc`의 경로에 마운트 하겠습니다.
+
+하지만 `/etc`의 경우 리눅스의 운영 파일이 관리 되고 있으므로 `subPath`를 사용하여 전체 마운트를 사용하지 않고 원하는 파일만을 마운트 합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-secret-file
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    volumeMounts:
+    - name: sfile
+      mountPath: /etc/app.properties   # 볼륨을 마운트 할 경로
+      subPath: app.properties          # 전체가 아닌 단일 파일을 마운트 할 경우 등록
+  volumes:                             # 볼륨 정보 등록
+  - name: sfile                        # Secret 명칭
+    secret:                            # Secret 정보
+      secretName: secret-file          # Secret 명칭
+      items:                           # Secret Item 정보
+      - key: app.properties            # Secret Key 등록
+        path: app.properties           # 설정 명칭 등록
+```
+
+설정 파일을 사용하여 파드를 생성하고 실습하도록 하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 Secret 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00028.yml
+pod/pod-with-secret-file created
+
+# 생성한 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods pod-with-secret-file
+NAME                   READY   STATUS    RESTARTS   AGE
+pod-with-secret-file   1/1     Running   0          8s
+
+# 생성한 파드 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pods pod-with-secret-file
+Name:         pod-with-secret-file
+...
+    Mounts:
+      /etc/app.properties from sfile (rw,path="app.properties")
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-286mc (ro)
+...
+Volumes:
+  sfile:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  secret-file
+    Optional:    false
+...
+
+# 생성한 시크릿 파일 내용 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-secret-file -- cat /etc/app.properties
+YXBwLm5hbWU9bm9kZQo=
+```
+
+이전에 배운 `ConfigMap`과 많이 유사하지만 `Secret`은 민감한 정보는 담지 않도록 하여야 합니다
+
+`Secret`설정 파일에 `data`항목은 base64로 등록 되어야 합니다.
+
+하지만 실제 모든 값이 base64로 등록 되지는 않습니다.
+
+따라서 `stringData`라는 속성값을 사용하여 `configMap`과 유사하게 등록할 수 있습니다.
+
+빠르게 실습을 진행해 본 다음 다음 장으로 넘어 가겠습니다.
+
+먼저 설정 파일(`00029.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: List
+items:
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: secret-string-data
+  stringData:                 # 문자열을 사용하여 Secret 값 등록
+    app.name: node
+    app.version: 1.0.0
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: pod-with-secret-string-data
+  spec:
+    containers:
+    - name: node
+      image: kim0lil/80700:v-1.0.0
+      envFrom:                       # 환경 변수를 한번에 등록
+      - prefix: config.              # 환경 변수의 전치사를 등록
+        secretRef:                   # Secret 정보 등록
+          name: secret-string-data   # Secret 명칭 등록
+```
+
+설정 파일을 사용하여 쿠버네티스 객체를 생성한 다음 실습을 진행합니다.
+
+```sh
+# 설정 파일을 사용하여 Secret과 파드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00029.yml
+secret/secret-string-data created
+pod/pod-with-secret-string-data created
+
+# 생성한 Secret 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get secret secret-string-data
+NAME                 TYPE     DATA   AGE
+secret-string-data   Opaque   2      25s
+
+# 생성한 Secret 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe secret secret-string-data
+Name:         secret-string-data
+Namespace:    default
+Labels:       <none>
+Annotations:  <none>
+
+Type:  Opaque
+
+Data
+====
+app.name:     4 bytes
+app.version:  5 bytes
+
+# 생성한 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod pod-with-secret-string-data
+NAME                          READY   STATUS    RESTARTS   AGE
+pod-with-secret-string-data   1/1     Running   0          41s
+
+# 생성한 파드 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod pod-with-secret-string-data
+Name:         pod-with-secret-string-data
+...
+    Environment Variables from:
+      secret-string-data  Secret with prefix 'config.'  Optional: false
+...
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-secret-string-data -- env
+...
+config.app.name=node
+config.app.version=1.0.0
+
+# 실습이 끝난 오브젝트 삭제
+kubectl delete pod,secret --all
+```
+
+#### downwardApi
+
+이전 `configMap`과 `secret`은 정적인 데이터를 다루고 있습니다.
+
+컨테이너가 실행 되기 전 또는 컨테이너를 생성하기 전에 생성하여 관리되는 설정 파일들은 그렇게 `configMap`과 `secret`을 사용하면 됩니다.
+
+하지만 컨테이너가 실행 되면서 등록 되는 런타임 설정 변수들은 등록 되지 않습니다.
+
+따라서 이러한 값들은 `downwardApi`를 통하여 처리하도록 합니다.
+
+간단하게 파드를 생성하는 설정 파일(`00030.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-downward
+  labels:                       # 레이블 정보
+    app: node
+  annotations:                  # 어노테이션 정보
+    app.version: 1.0.0
+    app.status: normal
+spec:
+  containers:
+  - name: app-node
+    image: kim0lil/80700:v-1.0.0
+    resources:                   # 리소스 요청을 등록
+      limits:                    # 최대 정보
+        storage: 1Gi             # 최대 저장소 정보
+      requests:                  # 최대 요청 정보
+        storage: 1Gi             # 최대 요청 저장소 정보
+```
+
+이런 파드 설정 정보가 있을 경우 컨테이너 설정 시 등록 되는 설정 정보를 컨테이너 내부에서 확인할 수 있는 방법이 있을까요?
+
+첫번째 방법으로는 환경 변수를 사용하여 노출하는 방법이 있습니다.
+
+수정을 위하여 설정 파일(`00031.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-downward
+  labels:                       # 레이블 정보
+    app: node
+    version: 1.0.01
+  annotations:                  # 어노테이션 정보
+    app.version: 1.0.0
+    app.status: normal
+spec:
+  containers:
+  - name: app-node
+    image: kim0lil/80700:v-1.0.0
+    resources:
+      limits:
+        ephemeral-storage: 1Mi
+      requests:
+        ephemeral-storage: 1Mi
+    env:
+    - name: ENV_RESOURCE_LIMIT_STORAGE         # 최대 저장소
+      valueFrom:
+        resourceFieldRef:
+          resource: limits.ephemeral-storage
+    - name: ENV_RESOURCE_REQUEST_STORAGE       # 요청 저장소
+      valueFrom:
+        resourceFieldRef:
+          resource: requests.ephemeral-storage
+    - name: ENV_POD_NAME                       # 파드 명칭
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+    - name: ENV_POD_NAMESPACE                  # 네임스페이스,
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.namespace
+    - name: ENV_POD_NODE_NAME                  # 파드 명칭
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+    - name: ENV_SERVICE_ACCOUNT                # 노드 명칭
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.serviceAccountName
+    - name: ENV_POD_IP                         # 파드 IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.podIP
+    - name: ENV_HOST_IP                        # 호스트 IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.hostIP
+    - name: ENV_LABELS_APP                     # 레이블 정보
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['app']
+```
+
+이제 설정 파일을 사용하여 파드를 생성하고 환경 변수를 확인해 보도록 하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 파드 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00031.yml
+pod/pod-with-downward created
+
+# 생성 된 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods pod-with-downward
+NAME                READY   STATUS    RESTARTS   AGE
+pod-with-downward   1/1     Running   0          13s
+
+# 생성 된 파드 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pods pod-with-downward
+Name:         pod-with-downward
+...
+    Environment:
+      ENV_RESOURCE_LIMIT_STORAGE:    1048576 (limits.ephemeral-storage)
+      ENV_RESOURCE_REQUEST_STORAGE:  1048576 (requests.ephemeral-storage)
+      ENV_POD_NAME:                  pod-with-downward (v1:metadata.name)
+      ENV_POD_NAMESPACE:             default (v1:metadata.namespace)
+      ENV_POD_NODE_NAME:              (v1:spec.nodeName)
+      ENV_SERVICE_ACCOUNT:            (v1:spec.serviceAccountName)
+      ENV_POD_IP:                     (v1:status.podIP)
+      ENV_HOST_IP:                    (v1:status.hostIP)
+...
+
+# 컨테이너의 환경 정보를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-downward -- env
+...
+ENV_RESOURCE_REQUEST_STORAGE=1048576
+ENV_POD_NAME=pod-with-downward
+ENV_POD_IP=172.17.0.3
+ENV_SERVICE_ACCOUNT=default
+ENV_HOST_IP=192.168.49.2
+ENV_LABELS_APP=node
+ENV_RESOURCE_LIMIT_STORAGE=1048576
+ENV_POD_NAMESPACE=default
+ENV_POD_NODE_NAME=minikube
+...
+```
+
+다음은 `downwardApi`를 볼륨으로 생성해보겠습니다.
+
+지금까지 쭉 해왔던 것이므로 어렵지 않게 할수 있을 것입니다.
+
+먼저 설정 파일(`00032.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-downward-volume
+  labels:
+    app: node
+    version: 1.0.0
+  annotations:
+    app.version: 1.0.0
+    app.status: normal
+spec:
+  containers:
+  - name: node-container
+    image: kim0lil/80700:v-1.0.0
+    resources:
+      limits:
+        ephemeral-storage: 1Mi
+      requests:
+        ephemeral-storage: 1Mi
+    volumeMounts:                                   # 볼륨 마운트
+    - name: downward-api                            # 볼륨 명칭
+      mountPath: /env                               # 볼륨 경로
+  volumes:
+  - name: downward-api                              # 볼륨 정보
+    downwardAPI:                                    # downward api 정보
+      items:                                        # api 리스트
+      - path: resource_limit_storage                # 최대 용량
+        resourceFieldRef: 
+          containerName: node-container
+          resource: limits.ephemeral-storage
+      - path: resource_request_storage              # 최대 요청 용량
+        resourceFieldRef:
+          containerName: node-container
+          resource: requests.ephemeral-storage
+      - path: pod_name                              # 파드 명
+        fieldRef:
+          fieldPath: metadata.name
+      - path: pod_namespace
+        fieldRef:
+          fieldPath: metadata.namespace             # 네임스페이스명
+      - path: labels
+        fieldRef:
+          fieldPath: metadata.labels                # 레이블명
+      - path: annotations
+        fieldRef: 
+          fieldPath: metadata.annotations           # 어노테이션명
+```
+
+설정 파일을 사용하여 파드를 하여 실습을 진행하겠습니다.
+
+```sh
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00032.yml
+pod/pod-with-downward-volume created
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod pod-with-downward-volume
+NAME                       READY   STATUS    RESTARTS   AGE
+pod-with-downward-volume   1/1     Running   0          24s
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe pod pod-with-downward-volume
+Name:         pod-with-downward-volume
+...
+    Limits:
+      ephemeral-storage:  1Mi
+    Requests:
+      ephemeral-storage:  1Mi
+    Environment:          <none>
+    Mounts:
+      /env from downward-api (rw)
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-6pbfm (ro)
+...
+Volumes:
+  downward-api:
+    Type:  DownwardAPI (a volume populated by information about the pod)
+    Items:
+      limits.ephemeral-storage -> resource_limit_storage
+      requests.ephemeral-storage -> resource_request_storage
+      metadata.name -> pod_name
+      metadata.namespace -> pod_namespace
+      metadata.labels -> labels
+      metadata.annotations -> annotations
+...
+
+# 레이블 정보 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-downward-volume -- cat /env/labels
+app="node"
+version="1.0.0"
+
+# 어노테이션 정보 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-downward-volume -- cat /env/annotations
+app.status="normal"
+app.version="1.0.0"
+kubernetes.io/config.seen="2022-10-17T15:20:02.349090300Z"
+kubernetes.io/config.source="api"
+
+# 실습이 끝난 파드 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete po --all
+pod "pod-with-downward-volume" deleted
+```

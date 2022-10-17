@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: ConfigMap              # 설정 맵으로 등록
+metadata:
+  name: configmap            # 설정 맵의 명칭 등록
+data:
+  application_version: 1.0.0 # 설정값 등록

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-configmap-file
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    volumeMounts:
+    - name: cfile
+      mountPath: /config
+  volumes:
+  - name: cfile
+    configMap:
+      name: configmap-file
+      items:
+      - key: 00023.json    # 00023.json 파일을
+        path: app.json     # app.json 파일로 생성

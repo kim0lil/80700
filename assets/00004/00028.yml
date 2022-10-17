@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-secret-file
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    volumeMounts:
+    - name: sfile
+      mountPath: /etc/app.properties   # 볼륨을 마운트 할 경로
+      subPath: app.properties          # 전체가 아닌 단일 파일을 마운트 할 경우 등록
+  volumes:                             # 볼륨 정보 등록
+  - name: sfile                        # Secret 명칭
+    secret:                            # Secret 정보
+      secretName: secret-file          # Secret 명칭
+      items:                           # Secret Item 정보
+      - key: app.properties            # Secret Key 등록
+        path: app.properties           # 설정 명칭 등록

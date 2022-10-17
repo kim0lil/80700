@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-environments
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    env:                          # 환경 변수 정보
+    - name: application_version   # 설정 값 명칭
+      value: 1.0.0                # 설정 값

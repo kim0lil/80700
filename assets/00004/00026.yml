@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-secret
+  labels:
+    app: node
+spec:
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+    env:                            # 환경 변후 정보
+    - name: GLOBAL_USER_NAME        # 환경 변수 명칭
+      valueFrom:                    # 환경 변수를 가져올 곳
+        secretKeyRef:               # 비밀 변수 정보
+          name: secret-data         # Secret 명칭
+          key: username             # Secret 명칭

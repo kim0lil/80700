@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: List
+items:
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: secret-string-data
+  stringData:                 # 문자열을 사용하여 Secret 값 등록
+    app.name: node
+    app.version: 1.0.0
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: pod-with-secret-string-data
+  spec:
+    containers:
+    - name: node
+      image: kim0lil/80700:v-1.0.0
+      envFrom:                       # 환경 변수를 한번에 등록
+      - prefix: config.              # 환경 변수의 전치사를 등록
+        secretRef:                   # Secret 정보 등록
+          name: secret-string-data   # Secret 명칭 등록
