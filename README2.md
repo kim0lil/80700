@@ -764,3 +764,4 @@ kube-system            Active   21d
 kubernetes-dashboard   Active   20d
 ```
 
+bin\minikube start --extra-config=apiserver.Features.Enable-SwaggerUI=true

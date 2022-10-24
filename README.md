@@ -4310,6 +4310,24 @@ cronjob-27755234   1/1           5s         63s
 cronjob-27755235   0/1           3s         3s
 ```
 
+### statefulset
+
+잡(`job`)을 알아보면서 애플리케이션의 상태가 얼마나 중요한지 알아 보았습니다.
+
+일반적인 애플리케이션은 무상태(`stateless`)를 지향하고 있습니다.
+
+무상태성을 지닌다는 말은 서버는 애플리케이션의 요청을 처리하는 용도로 사용하며 클라우드 시대인 요즘은 무한대로 처리 수를 늘일수 있다는 말이 됩니다.
+
+따라서 기본에 배운 `replicationcontroller`, `replicaset`, `deployments`들은 모두 무 상태성의 애플리케이션을 배포할 때 사용합니다.
+
+그 외에도 단 한번만 실행 되어야 하거나 원하는 시간에 원하는 만큼 실행해야 하는 애플리케이션의 경우에는 `job`과 `cronjob`을 사용하였습니다.
+
+하지만 이 역시 애플리케이션의 상태를 고정하는 역활을 하지는 않았습니다.
+
+이번에 배울 `statefulset`은 애플리케이션의 상태를 지정하여 원하는 상태의 애플리케이션을 배포하는 방법을 배워보겠습니다.
+
+
+
 ### ingress
 
 인그레스는 외부의 요청을 처리하기 위한 하나의 컨트롤러로써 클라이언트의 요청 경로에 따라 원하는 파드 또는 서비스를 선택하여 제공하는 기능을 가질 수 있습니다.
@@ -7444,11 +7462,269 @@ pod "pod-with-downward-volume" deleted
 
 따라서 실제 사용자는 쿠버네티스에서는 관리 되지 않습니다.
 
+이와같은 사용자는 하나 이상의 그룹에 속해야 합니다.
 
+이 그룹들(`group`)은 원하는 사용자를 묶어서 관리하는데 사용합니다.
+
+기존에 사용한 네임스페이스 역시 이와 같은 그룹의 형상을 유지합니다.
+
+쿠버네티스의 인증 플러그인이 반환하는 서비스어카운트는 특별한 의미를 부여하지 않지만 시스템으로 관리 되는 서비스 어카운트들이 있으며 이는 아래와 같습니다.
+
+1. system:unauthenticated: 인증할 수 없는 사용자의 요청
+2. system.authenticated: 인증 된 사용자의 요청
+3. system:serviceaccounts: 시스템의 모든 어카운트 정보
+4. system:serviceaccounts:`<namespace>`: 특정 네임스페이스의 모든 어카운트 정보
+
+먼저 파드를 생성하고 다음으로 넘어 가도록 하겠습니다.
+
+새로운 파일을 생성(`00033.yml`)한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-auth
+  labels:
+    app: node
+spec: 
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0
+```
+
+이 설정 파일을 사용하여 파드를 생성합니다.
+
+```sh
+# 설정 파일을 사용하여 파드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master) 
+$ kubectl create -f assets\00004\00033.yml
+pod/pod-with-auth created
+
+# 생성한 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod
+NAME            READY   STATUS    RESTARTS   AGE
+pod-with-auth   1/1     Running   0          79s
+```
+
+쿠버네티스의 `api-server`로 접속하기 위해서는 `ssh`를 사용하며 토큰을 사용하여 자신을 인증하는 방식을 사용합니다.
+
+간단히 실습해 보면서 `api` 서버로 접속해 보도록 하겠습니다.
+
+```sh
+# 생성한 컨테이너로 접속
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-with-auth -- /bin/bash
+
+# 컨테이너의 환경변수로 셋팅 된 쿠버네티스 서비스 확인
+root@pod-with-auth:/# env | grep KUBERNETES_SERVICE
+KUBERNETES_SERVICE_PORT_HTTPS=443
+KUBERNETES_SERVICE_PORT=443
+KUBERNETES_SERVICE_HOST=10.96.0.1
+
+# https 로 api 접속을 시도할 경우 SSL 인증서의 자격 증명을 확인
+root@pod-with-auth:/# curl https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT_HTTPS/
+curl: (60) SSL certificate problem: unable to get local issuer certificate
+...
+
+# https로 인증서 자격 증명을 받을 수 없기 떄문에 --insecure을 사용하여 인증을 무시
+# 인증서는 증명하였지만 사용자의 증명을 받지 않았기 때문에 `anonymous`사용자 지정
+root@pod-with-auth:/# curl --insecure https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT_HTTPS/
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "forbidden: User \"system:anonymous\" cannot get path \"/\"",
+  "reason": "Forbidden",
+  "details": {},
+  "code": 403
+}
+
+# 실제로 --insecure을 사용할 수 없기 때문에 자기 증명 인증서 확인하도록 작업
+root@pod-with-auth:/# curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT_HTTPS/
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "forbidden: User \"system:anonymous\" cannot get path \"/\"",
+  "reason": "Forbidden",
+  "details": {},
+  "code": 403
+}
+
+# 쿠버네티스에서 발급받은 토큰을 환경 변수로 등록
+root@pod-with-auth:/# API_TOKEN=`cat /var/run/secrets/kubernetes.io/serviceaccount/token`
+
+# 발급받은 토큰을 사용하여 API 서비스 실행
+root@pod-with-auth:/# curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETESSERVICE_HOST:$KUBERNETES_SERVICE_PORT_HTTPS/api
+{
+  "kind": "APIVersions",
+  "versions": [
+    "v1"
+  ],
+  "serverAddressByClientCIDRs": [
+    {
+      "clientCIDR": "0.0.0.0/0",
+      "serverAddress": "192.168.49.2:8443"
+    }
+  ]
+}
+
+# 클러스트 정보를 요청할 경우 권한 오류
+root@pod-with-auth:/# curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETESSERVICE_HOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/pods
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "pods is forbidden: User \"system:serviceaccount:default:default\" cannot list resource \"pods\" in API group \"\" at the cluster scope",
+  "reason": "Forbidden",
+  "details": {
+    "kind": "pods"
+  },
+  "code": 403
+}
+
+# 컨테이너 TTY 종료
+root@pod-with-auth:/# exit
+
+# 테스트가 끝난 파드 제거
+kubectl delete pod --all
+pod "pod-with-auth" deleted
+```
+
+쿠버네티스의 `rest api server`를 사용할 경우 위와 같이 권한의 그룹을 확인하게 됩니다.
+
+따라서 이번에는 이러한 권한 인증을 처리해보도록 하겠습니다.
 
 #### restApiServer
 
-이번장에는 쿠버네티스의 rest api 서버를 다루어보겠습니다.
-
 쿠버네티스의 모든 객체는 `rest api server`를 통하여 처리할 수 있으므로 매우 유용하게 다룰 수 있습니다.
 
+이전 인증과 관련 된 내용은 넘어 가서 먼저 네임스페이스와 서비스 계정을 사용하여 파드를 생성해보도록 하겠습니다.
+
+설정 파일을 생성(`00034.yml`)한 다음 아래 설정값을 등록합니다
+
+```yml
+apiVersion: v1
+kind: List
+items:
+- apiVersion: v1      # 네임스페이스 1
+  kind: Namespace
+  metadata:
+    name: ns-1
+- apiVersion: v1      # 네임스페이스 2
+  kind: Namespace
+  metadata:
+    name: ns-2
+- apiVersion: v1      # 서비스 계정 1
+  kind: ServiceAccount
+  metadata:
+    namespace: ns-1
+    name: sa-1
+- apiVersion: v1      # 서비스 계정 2
+  kind: ServiceAccount
+  metadata:
+    namespace: ns-2
+    name: sa-2
+- apiVersion: v1      # 파드 1
+  kind: Pod
+  metadata:
+    namespace: ns-1
+    name: pod-1
+    labels:
+      scope: pod
+  spec:
+    containers:
+    - name: pod-1
+      image: kim0lil/80700:v-1.0.0
+- apiVersion: v1      # 파드 2
+  kind: Pod
+  metadata:
+    namespace: ns-2
+    name: pod-2
+    labels:
+      scope: cluster
+  spec:
+    containers:
+    - name: pod-2
+      image: kim0lil/80700:v-1.0.0
+    
+```
+
+설정 파일을 사용하여 파드를 생성합니다.
+
+```sh
+# 설정 파일을 사용하여 네임스페이스와 파드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00034.yml
+namespace/ns-1 created
+namespace/ns-2 created
+serviceaccount/sa-1 created
+serviceaccount/sa-2 created
+pod/pod-1 created
+pod/pod-2 created
+
+# 생성한 네임스페이스 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get namespace
+NAME              STATUS   AGE
+default           Active   59m
+foo               Active   59m
+kube-node-lease   Active   59m
+kube-public       Active   59m
+kube-system       Active   59m
+ns-1              Active   10s
+ns-2              Active   10s
+
+# 네임스페이스(1)에 등록 된 서비스 계정 조회
+$ kubectl get serviceaccount -n ns-1
+NAME      SECRETS   AGE
+default   0         46s
+sa-1      0         36s
+
+# 네임스페이스(2)에 등록 된 서비스 계정 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get serviceaccount -n ns-2
+NAME      SECRETS   AGE
+default   0         66s
+sa-2      0         55s
+
+# 네임스페이스(1)에 등록 된 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod -n ns-1
+NAME    READY   STATUS    RESTARTS   AGE
+pod-1   1/1     Running   0          25s
+
+# 네임스페이스(2)에 등록 된 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod -n ns-2
+NAME    READY   STATUS    RESTARTS   AGE
+pod-2   1/1     Running   0          30s
+
+# 터미널을 하나더 연 다음 아래와 같이 컨테이너로 접근
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod-1 -n ns-1 -- /bin/bash
+
+# 인증 토큰 등록
+API_TOKEN=`cat /var/run/secrets/kubernetes.io/serviceaccount/token`
+
+# api 요청
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces
+{
+  "kind": "APIVersions",
+  "versions": [
+    "v1"
+  ],
+  "serverAddressByClientCIDRs": [
+    {
+      "clientCIDR": "0.0.0.0/0",
+      "serverAddress": "192.168.49.2:8443"
+    }
+  ]
+}
+```
+
+기본적인 인증은 끝났습니다.

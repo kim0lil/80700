@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-auth
+  labels:
+    app: node
+spec: 
+  containers:
+  - name: node
+    image: kim0lil/80700:v-1.0.0

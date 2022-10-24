@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: List
+items:
+- apiVersion: v1      # 네임스페이스 1
+  kind: Namespace
+  metadata:
+    name: ns-1
+- apiVersion: v1      # 네임스페이스 2
+  kind: Namespace
+  metadata:
+    name: ns-2
+- apiVersion: v1      # 서비스 계정 1
+  kind: ServiceAccount
+  metadata:
+    namespace: ns-1
+    name: sa-1
+- apiVersion: v1      # 서비스 계정 2
+  kind: ServiceAccount
+  metadata:
+    namespace: ns-2
+    name: sa-2
+- apiVersion: v1      # 파드 1
+  kind: Pod
+  metadata:
+    namespace: ns-1
+    name: pod-1
+    labels:
+      scope: pod
+  spec:
+    serviceAccount: sa-1
+    containers:
+    - name: pod-1
+      image: kim0lil/80700:v-1.0.0
+- apiVersion: v1      # 파드 2
+  kind: Pod
+  metadata:
+    namespace: ns-2
+    name: pod-2
+    labels:
+      scope: cluster
+  spec:
+    serviceAccount: sa-2
+    containers:
+    - name: pod-2
+      image: kim0lil/80700:v-1.0.0
