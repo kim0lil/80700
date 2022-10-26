@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: view-pod-rolebinding
+  namespace: ns-1                      # 네임스페이스를 지정
+roleRef:
+  apiGroup: rbac.authorization.k8s.io  # api 그룹은 권한 그룹으로 지정
+  kind: Role                           # 그룹롤을 지정
+  name: view-pod                       # 롤 명칭을 등록
+subjects:
+- kind: ServiceAccount                 # 롤을 지정할 대상(서비스계정)
+  name: sa-1                           # 서비스 계정명칭
+  namespace: ns-1                      # 서비스 계정의 네임스페이스

@@ -7462,6 +7462,8 @@ pod "pod-with-downward-volume" deleted
 
 따라서 실제 사용자는 쿠버네티스에서는 관리 되지 않습니다.
 
+### Api-Server Authorization
+
 이와같은 사용자는 하나 이상의 그룹에 속해야 합니다.
 
 이 그룹들(`group`)은 원하는 사용자를 묶어서 관리하는데 사용합니다.
@@ -7637,6 +7639,7 @@ items:
     labels:
       scope: pod
   spec:
+    serviceAccount: sa-1
     containers:
     - name: pod-1
       image: kim0lil/80700:v-1.0.0
@@ -7648,10 +7651,10 @@ items:
     labels:
       scope: cluster
   spec:
+    serviceAccount: sa-2
     containers:
     - name: pod-2
       image: kim0lil/80700:v-1.0.0
-    
 ```
 
 설정 파일을 사용하여 파드를 생성합니다.
@@ -7712,7 +7715,7 @@ $ kubectl exec -it pod-1 -n ns-1 -- /bin/bash
 API_TOKEN=`cat /var/run/secrets/kubernetes.io/serviceaccount/token`
 
 # api 요청
-curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT_HTTPS/api
 {
   "kind": "APIVersions",
   "versions": [
@@ -7725,6 +7728,288 @@ curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authoriza
     }
   ]
 }
+
+# 권한이 없는 네임스페이스 정보 요청
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespace
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "namespace is forbidden: User \"system:serviceaccount:ns-1:sa-1\" cannot list resource \"namespace\" in API group \"\" at the cluster scope",
+  "reason": "Forbidden",
+  "details": {
+    "kind": "namespace"
+  },
+  "code": 403
+}
 ```
 
-기본적인 인증은 끝났습니다.
+기본적인 인증은 테스트는 끝났습니다.
+
+이제 서비스 계정(`sa-1`)에 권한을 주면서 하나씩 역활 기반 권한 접근(`RBAC`)에 대해서 알아보도록 하겠습니다.
+
+역활기반 인증의 경우에는 두가지 종류의 설정값이 있습니다.
+
+1. 역활 : 롤(`role`) 또는 클러스터의 롤(`clusterRole`)
+2. 권한 : 롤 바인딩(`rolebinding`) 또는 클러스터 롤 바인딩(`clusterRoleBinding`) - 롤을 사용자 또는 그룹에 연결
+
+먼저 사용자 계정을 위한 사용자 롤을 생성해 보도록 하겠습니다.
+
+롤 설정을 위한 설정 파일(`00035.yml`)을 생성하여 아래 설정 파일을 등록합니다.
+
+롤은 어떤 리소스(`resources`)에 어떤 행동(`verb`)을 사용할 수 있는지를 나타냅니다.
+
+따라서 다음 예제는 파드를 조회 할 수 있는 권한을 설정합니다.
+
+```yml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role             # [Rule] 을 생성합니다.
+metadata:
+  name: view-pod
+  namespace: ns-1
+rules:
+- apiGroups:           
+  - ""
+  resources:           # 리소스 그룹을 등록 ( 네임스페이스 파드 대상 )
+  - pods
+  - namespaces
+  verbs:               # 가능한 행위를 등록 ( get - 조회 가능, list - 나열 가능 )
+  - get
+  - list
+```
+
+롤을 생성하였다면 이번에는 롤 바인딩을 사용하여 `sa-1`이라는 서비스 계정에 `view-pod`라는 권한을 할당해 보겠습니다.
+
+롤 바인딩을 생성하기 위하여 설정 파일(`00036.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: view-pod-rolebinding
+  namespace: ns-1                      # 네임스페이스를 지정
+roleRef:
+  apiGroup: rbac.authorization.k8s.io  # api 그룹은 권한 그룹으로 지정
+  kind: Role                           # 그룹롤을 지정
+  name: view-pod                       # 롤 명칭을 등록
+subjects:
+- kind: ServiceAccount                 # 롤을 지정할 대상(서비스계정)
+  name: sa-1                           # 서비스 계정명칭
+  namespace: ns-1                      # 서비스 계정의 네임스페이스
+```
+
+실습을 진행해 보도록 합니다.
+
+```sh
+# 설정 파일을 사용하여 롤을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00035.yml
+role.rbac.authorization.k8s.io/view-pod created
+
+# 생성한 롤 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get role -n ns-1
+NAME       CREATED AT
+view-pod   2022-10-26T14:46:16Z
+
+# 생성한 롤 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe role -n ns-1
+Name:         view-pod
+Labels:       <none>
+Annotations:  <none>
+PolicyRule:
+  Resources  Non-Resource URLs  Resource Names  Verbs
+  ---------  -----------------  --------------  -----
+  namespaces  []                 []              [get list]
+  pods        []                 []              [get list]
+
+# 설정 파일을 사용하여 롤 바인딩을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00036.yml
+rolebinding.rbac.authorization.k8s.io/view-pod-rolebinding created
+
+# 생성한 롤 바인딩 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get rolebinding -n ns-1
+NAME                   ROLE            AGE
+view-pod-rolebinding   Role/view-pod   17s
+
+# 생성한 롤 바인딩 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe rolebinding -n ns-1
+Name:         view-pod-rolebinding
+Labels:       <none>
+Annotations:  <none>
+Role:
+  Kind:  Role
+  Name:  view-pod
+Subjects:
+  Kind            Name  Namespace
+  ----            ----  ---------
+  ServiceAccount  sa-1  ns-1
+
+# 이전 터미널로 돌아 가서 api 리소스 요청
+# 네임스페이스 리소스 요청
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/ns-1
+
+{
+  "kind": "Namespace",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "ns-1",
+    "uid": "0766c102-cada-4f5b-bfdf-1eea7bb32d23",
+    "resourceVersion": "3354",
+    "creationTimestamp": "2022-10-24T15:00:03Z",
+    "labels": {
+      "kubernetes.io/metadata.name": "ns-1"
+...
+}
+
+# 파드 리소스 요청
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/ns-1/pods
+{
+  "kind": "PodList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "80388"
+  },
+  "items": [
+    ...
+  ]
+}
+
+# 서비스 리소스를 요청
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/ns-1/services
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "services is forbidden: User \"system:serviceaccount:ns-1:sa-1\" cannot list resource \"services\" in API group \"\" in the namespace \"ns-1\"",
+  "reason": "Forbidden",
+  "details": {
+    "kind": "services"
+  },
+  "code": 403
+}
+
+# 다른 네임스페이스(ns-2)의 파드 리소스 요청
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/ns-2/pods
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "pods is forbidden: User \"system:serviceaccount:ns-1:sa-1\" cannot list resource \"pods\" in API group \"\" in the namespace \"ns-2\"",
+  "reason": "Forbidden",
+  "details": {
+    "kind": "pods"
+  },
+  "code": 403
+}
+```
+
+실습에서 볼 수 있듯이 `ns-2`의 네임스페이스의 리소스는 조회 불가능합니다.
+
+현재 모형을 보자면 아래와 같습니다.
+
+![롤과 롤 바인딩-1](./imgs/00027.png)
+
+그렇다면 `ns-2`의 네임스페이스의 접근하려면 어떻게 해야 할까요?
+
+롤과 롤 바인딩은 네임스페이스의 귀속 되므로 아래 그림과 같이 `ns-2`의 네임스페이스의 롤을 생성한 다음 생성한 롤을 사용자 계정에 바인딩 하는 방법이 있습니다.
+
+![롤과 롤 바인딩-2](./imgs/00028.png)
+
+새로운 롤과 롤 바인딩을 위하여 설정 파일(`00037.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: view-pod
+  namespace: ns-2
+rules:
+- apiGroups: [""]
+  resources: ["namespace","pods"]
+  verbs: ["get","list"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: view-pod-rolebinding
+  namespace: ns-2
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: view-pod
+subjects:
+- kind: ServiceAccount
+  name: sa-1
+  namespace: ns-1
+```
+
+바로 실습을 진행해 보도록 하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 롤과 롤 바인딩을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl apply -f assets/00004/00037.yml
+role.rbac.authorization.k8s.io/view-pod unchanged
+rolebinding.rbac.authorization.k8s.io/view-pod-rolebinding created
+
+# 생성한 롤 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get role -n ns-2
+NAME       CREATED AT
+view-pod   2022-10-26T15:25:02Z
+
+# 생성한 롤 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe role -n ns-2
+Name:         view-pod
+Labels:       <none>
+Annotations:  <none>
+PolicyRule:
+  Resources  Non-Resource URLs  Resource Names  Verbs
+  ---------  -----------------  --------------  -----
+  namespace  []                 []              [get list]
+  pods       []                 []              [get list]
+
+# 생성한 롤 바인딩 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get rolebinding -n ns-2
+NAME                   ROLE            AGE
+view-pod-rolebinding   Role/view-pod   75s
+
+# 생성한 롤 바인딩 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe rolebinding -n ns-2
+Name:         view-pod-rolebinding
+Labels:       <none>
+Annotations:  <none>
+Role:
+  Kind:  Role
+  Name:  view-pod
+Subjects:
+  Kind            Name  Namespace
+  ----            ----  ---------
+  ServiceAccount  sa-1  ns-1
+
+# 터미널로 돌아 가서 ns-2의 파드 조회
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/ns-2/pods
+{
+  "kind": "PodList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "81318"
+  },
+  "items": [
+    ...
+  ]
+}
+```

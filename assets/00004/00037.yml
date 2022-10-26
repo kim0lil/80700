@@ -1,0 +1,25 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: view-pod
+  namespace: ns-2
+rules:
+- apiGroups: [""]
+  resources: ["namespace","pods"]
+  verbs: ["get","list"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: view-pod-rolebinding
+  namespace: ns-2
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: view-pod
+subjects:
+- kind: ServiceAccount
+  name: sa-1
+  namespace: ns-1

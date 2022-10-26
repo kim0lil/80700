@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role             # [Rule] 을 생성합니다.
+metadata:
+  name: view-pod
+  namespace: ns-1
+rules:
+- apiGroups:           
+  - ""
+  resources:           # 리소스 그룹을 등록 ( 네임스페이스 파드 대상 )
+  - pods
+  - namespaces
+  verbs:               # 가능한 행위를 등록 ( get - 조회 가능, list - 나열 가능 )
+  - get
+  - list
