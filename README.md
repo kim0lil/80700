@@ -4310,24 +4310,6 @@ cronjob-27755234   1/1           5s         63s
 cronjob-27755235   0/1           3s         3s
 ```
 
-### statefulset
-
-잡(`job`)을 알아보면서 애플리케이션의 상태가 얼마나 중요한지 알아 보았습니다.
-
-일반적인 애플리케이션은 무상태(`stateless`)를 지향하고 있습니다.
-
-무상태성을 지닌다는 말은 서버는 애플리케이션의 요청을 처리하는 용도로 사용하며 클라우드 시대인 요즘은 무한대로 처리 수를 늘일수 있다는 말이 됩니다.
-
-따라서 기본에 배운 `replicationcontroller`, `replicaset`, `deployments`들은 모두 무 상태성의 애플리케이션을 배포할 때 사용합니다.
-
-그 외에도 단 한번만 실행 되어야 하거나 원하는 시간에 원하는 만큼 실행해야 하는 애플리케이션의 경우에는 `job`과 `cronjob`을 사용하였습니다.
-
-하지만 이 역시 애플리케이션의 상태를 고정하는 역활을 하지는 않았습니다.
-
-이번에 배울 `statefulset`은 애플리케이션의 상태를 지정하여 원하는 상태의 애플리케이션을 배포하는 방법을 배워보겠습니다.
-
-
-
 ### ingress
 
 인그레스는 외부의 요청을 처리하기 위한 하나의 컨트롤러로써 클라이언트의 요청 경로에 따라 원하는 파드 또는 서비스를 선택하여 제공하는 기능을 가질 수 있습니다.
@@ -4834,6 +4816,270 @@ $ curl v2.kim0lil.co.kr
 admin@jinhyeok MINGW64 ~/dev
 $ kubectl delete ingress --all
 ingress.networking.k8s.io "ingerss" deleted
+```
+
+### statefulset
+
+잡(`job`)을 알아보면서 애플리케이션의 상태가 얼마나 중요한지 알아 보았습니다.
+
+일반적인 애플리케이션은 무상태(`stateless`)를 지향하고 있습니다.
+
+무상태성을 지닌다는 말은 서버는 애플리케이션의 요청을 처리하는 용도로 사용하며 클라우드 시대인 요즘은 무한대로 처리 수를 늘일수 있다는 말이 됩니다.
+
+따라서 기본에 배운 `replicationcontroller`, `replicaset`, `deployments`들은 모두 상태가 없는 무 상태성의 애플리케이션을 배포할 때 사용합니다.
+
+그 외에도 단 한번만 실행 되어야 하거나 원하는 시간에 원하는 만큼 실행해야 하는 애플리케이션의 경우에는 `job`과 `cronjob`을 사용하였습니다.
+
+이 역시 애플리케이션의 상태를 정의하는 역활을 하지는 않았습니다.
+
+하지만 이번에 배울 `statefulset`은 애플리케이션의 상태를 지정하여 원하는 상태의 애플리케이션을 배포하는 방법을 배워보겠습니다.
+
+우리가 배운 디플로이먼트의 파드 상태는 아래 그림과 같습니다.
+
+![스테이트풀셋-1](./imgs/00018-1.png)
+
+기존 레플리카셋이 파드를 생성할 때 임의적으로 해시값을 부여하여 관리하던 반면 스테이트풀셋은 아래와 같이 예측 가능한 이름을 사용합니다
+
+![스테이트풀셋-2](./imgs/00018-2.png)
+
+또한 뒤편에서 다룰 영구 볼륨과 영구 볼륨 클레임을 사용하여 고유한 데이터를 보존할 수 있습니다.
+
+![스테이트풀셋-3](./imgs/00018-3.png)
+
+실습에 들어가기 전 먼저 기존 애플리케이션을 수정하여 볼륨에 파일을 남길 수 있도록 하겠습니다.
+
+`app.js`파일을 생성한 다음 아래 코드를 등록합니다.
+
+```js
+const http = require('http');
+const os   = require('os');
+const fs   = require('fs');
+const port = 8080;
+const gDir = "/var/data";
+
+//- 서비스 처리기를 생성한다.
+const serverProcessHandler = (req, res) => {
+    var fl;
+    try{
+        fl = fs.readFileSync(gDir.concat('/data.txt'))
+        
+        //- 전송할 데이터 셋팅    
+        var data = {
+            error_code    : 0, 
+            error_message : null, 
+            data          : '[read] volume resource '+os.hostname()
+        }
+    }
+    catch(e)
+    {
+        //- 데이터 경로에 호스트 명칭 등록
+        fs.writeFileSync(gDir.concat('/data.txt'), os.hostname());
+        
+        //- 전송할 데이터 셋팅    
+        var data = {
+            error_code    : 0, 
+            error_message : null, 
+            data          : '[new] volume resource '+os.hostname()
+        }
+    }
+
+    //- 헤더 및 데이터 전송
+    res.writeHead(200, {'Content-Type': 'application/json'});
+
+    res.end(JSON.stringify(data));
+} 
+
+const serverOpenHandler = function() {
+
+    console.log(`server is running at http://127.0.0.1:${port}`);
+}
+
+//- 서버를 생성한다.
+const www = http.createServer(serverProcessHandler);
+
+//- 생성한 서버를 오픈한다.
+www.listen(port, serverOpenHandler);
+```
+
+이미지를 빌드한 다음 서버로 푸시합니다.
+
+```sh
+# 도커 이미지를 빌드
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker build -t kim0lil/80700:v-1.0.5 -f assets/00003/00021/Dockerfile assets/00003/00021
+...
+
+# 도커 이미지 푸시
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ docker push kim0lil/80700:v-1.0.5
+...
+
+```
+
+이미지를 빌드 하였으면 이번에는 스테이트풀셋을 사용하기 위한 영구 볼륨을 생성하겠습니다.
+
+영구 볼륨은 뒤편에서 자세히 다를 것이니 간단히 설정하고 넘어가겠습니다.
+
+영구 볼륨 3개를 생성하기 위하여 새로운 설정 파일(`00022.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: List
+items:
+- apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: pv-1
+  spec:
+    storageClassName: standard
+    capacity: 
+      storage: 1Gi
+    accessModes:
+    - ReadWriteOnce
+    hostPath:
+      path: /pv-1
+- apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: pv-2
+  spec:
+    storageClassName: standard
+    capacity: 
+      storage: 1Gi
+    accessModes:
+    - ReadWriteOnce
+    hostPath:
+      path: /pv-2
+- apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: pv-3
+  spec:
+    storageClassName: standard
+    capacity: 
+      storage: 1Gi
+    accessModes:
+    - ReadWriteOnce
+    hostPath:
+      path: /pv-3
+```
+
+다음으로 영구 볼륨을 사용하는 서비스와 스테이트풀 셋을 생성할 설정 파일(`00023.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc
+spec:
+  clusterIP : None
+  
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: statefulset-pod
+spec:
+  serviceName: svc
+  selector:
+    matchLabels:
+      app: node
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: node
+    spec:
+      containers:
+      - name: app
+        image: kim0lil/80700:v-1.0.5
+        volumeMounts:
+        - name: pvc
+          mountPath: /var/data
+  volumeClaimTemplates:
+  - metadata:
+      name: pvc
+    spec:
+      resources:
+        requests:
+          storage: 1Gi
+      accessModes:
+      - ReadWriteOnce
+```
+
+설정 파일을 사용하여 실습을 진행해보도록 하겠습니다.
+
+```sh
+
+# 설정 파일을 사용하여 영구 볼륨을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00022.yml
+persistentvolume/pv-1 created
+persistentvolume/pv-2 created
+persistentvolume/pv-3 created
+
+# 생성할 볼륨과 볼륨 클래임을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get persistentvolume,persistentvolumeclaim
+NAME                    CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM                           STORAGECLASS   REASON   AGE
+persistentvolume/pv-1   1Gi        RWO            Retain           Bound    default/pvc-statefulset-pod-1   standard                86s
+persistentvolume/pv-2   1Gi        RWO            Retain           Bound    default/pvc-statefulset-pod-0   standard                86s
+persistentvolume/pv-3   1Gi        RWO            Retain           Bound    default/pvc-statefulset-pod-2   standard                86s
+
+NAME                                          STATUS   VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+persistentvolumeclaim/pvc-statefulset-pod-0   Bound    pv-2     1Gi        RWO            standard       83s
+persistentvolumeclaim/pvc-statefulset-pod-1   Bound    pv-1     1Gi        RWO            standard       79s
+persistentvolumeclaim/pvc-statefulset-pod-2   Bound    pv-3     1Gi        RWO            standard       76s
+
+# 설정 파일을 사용하여 서비스와 스테이트풀셋 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00003/00023.yml
+service/svc created
+statefulset.apps/statefulset-pod created
+
+# 생성한 서비스와 스테이트풀셋 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get service,statefulset,pods
+NAME                 TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+service/kubernetes   ClusterIP   10.96.0.1    <none>        443/TCP   3d1h
+service/svc          ClusterIP   None         <none>        <none>    2m1s
+
+NAME                               READY   AGE
+statefulset.apps/statefulset-pod   3/3     2m1s
+
+NAME                    READY   STATUS    RESTARTS   AGE
+pod/statefulset-pod-0   1/1     Running   0          2m1s
+pod/statefulset-pod-1   1/1     Running   0          2m
+pod/statefulset-pod-2   1/1     Running   0          117s
+
+# 첫번째 요청의 경우 새로운 파일을 생성한 다음 신규 등록 반환
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod/statefulset-pod-0 -- curl localhost:8080
+{"error_code":0,"error_message":null,"data":"[new] volume resource statefulset-pod-0"}
+
+# 두번째 요청의 경우 기존의 파일을 확인하여 결과 반환
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod/statefulset-pod-0 -- curl localhost:8080
+{"error_code":0,"error_message":null,"data":"[read] volume resource statefulset-pod-0"}
+
+# 파드를 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods
+NAME                READY   STATUS    RESTARTS   AGE
+statefulset-pod-0   1/1     Running   0          53s
+statefulset-pod-1   1/1     Running   0          52s
+statefulset-pod-2   1/1     Running   0          49s
+
+# [statefulset-pod-0] 파드를 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete pod statefulset-pod-0
+pod "statefulset-pod-0" deleted
+
+# 신규로 생성 된 파드에도 해당 값이 존재 하는지 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it pod/statefulset-pod-0 -- curl localhost:8080
+{"error_code":0,"error_message":null,"data":"[read] volume resource statefulset-pod-0"}
 ```
 
 ## kubernetes configuration
@@ -7917,7 +8163,7 @@ curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authoriza
 
 ![롤과 롤 바인딩-1](./imgs/00027.png)
 
-그렇다면 `ns-2`의 네임스페이스의 접근하려면 어떻게 해야 할까요?
+그렇다면 `sa-1`이 `ns-2`의 네임스페이스의 접근하려면 어떻게 해야 할까요?
 
 롤과 롤 바인딩은 네임스페이스의 귀속 되므로 아래 그림과 같이 `ns-2`의 네임스페이스의 롤을 생성한 다음 생성한 롤을 사용자 계정에 바인딩 하는 방법이 있습니다.
 
@@ -8013,3 +8259,330 @@ curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authoriza
   ]
 }
 ```
+
+롤(`role`)과 롤 바인딩(`rolebinding`)은 한사람에게 여러번 등록할 수 있습니다.
+
+새로운 롤을 바인딩 하기 전 서비스(`Service`) 개체를 조회해 보도록 하겠습니다. 
+
+```sh
+# 서비스 개체를 리스트로 요청
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/ns-1/services
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "services is forbidden: User \"system:serviceaccount:ns-1:sa-1\" cannot list resource \"services\" in API group \"\" in the namespace \"ns-1\"",
+  "reason": "Forbidden",
+  "details": {
+    "kind": "services"
+  },
+  "code": 403
+}
+```
+
+이번에는 명령어를 사용하여 롤과 롤 바인드를 생성해 보도록 하겠습니다.
+
+```sh
+# 명령문을 사용하여 롤을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create role view-service --verb="get,list" --resource="Service" -n="ns-1"
+role.rbac.authorization.k8s.io/view-service created
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create rolebinding view-service-rolebinding --role="view-service" --serviceaccount="ns-1:sa-1" -n ns-1
+rolebinding.rbac.authorization.k8s.io/view-service-rolebinding created
+
+# 생성한 롤을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get role view-service -n ns-1
+NAME           CREATED AT
+view-service   2022-10-27T00:38:44Z
+
+# 생성한 롤을 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe role view-service -n ns-1
+Name:         view-service
+Labels:       <none>
+Annotations:  <none>
+PolicyRule:
+  Resources  Non-Resource URLs  Resource Names  Verbs
+  ---------  -----------------  --------------  -----
+  services   []                 []              [get list]
+
+# 생성한 롤 바인딩을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get rolebinding view-service-rolebinding -n ns-1
+NAME                       ROLE                AGE
+view-service-rolebinding   Role/view-service   38s
+
+# 생성한 롤 바인딩을 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe rolebinding view-service-rolebinding -n ns-1
+Name:         view-service-rolebinding
+Labels:       <none>
+Annotations:  <none>
+Role:
+  Kind:  Role
+  Name:  view-service
+Subjects:
+  Kind            Name  Namespace
+  ----            ----  ---------
+  ServiceAccount  sa-1  ns-1
+
+# 롤이 바인딩 되었으면 터미널로 돌아 가서 권한 확인
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/ns-1/services
+{
+  "kind": "ServiceList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "92839"
+  },
+  "items": []
+}
+
+# 다음 실습을 위하여 롤을 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete role view-pod view-service -n ns-1
+role.rbac.authorization.k8s.io "view-pod" deleted
+role.rbac.authorization.k8s.io "view-service" deleted
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete role view-pod -n ns-2
+role.rbac.authorization.k8s.io "view-pod" deleted
+
+# 올바르게 롤이 삭제 되었으면 403 권한 에러 확인
+# 네임스페이스 ns-1과 ns-2 모두 확인
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/ns-1/pods
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "pods is forbidden: User \"system:serviceaccount:ns-1:sa-1\" cannot list resource \"pods\" in API group \"\" in the namespace \"ns-1\": RBAC: [role.rbac.authorization.k8s.io \"view-pod\" not found, role.rbac.authorization.k8s.io \"view-service\" not found]",
+  "reason": "Forbidden",
+  "details": {
+    "kind": "pods"
+  },
+  "code": 403
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/ns-2/pods
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "pods is forbidden: User \"system:serviceaccount:ns-1:sa-1\" cannot list resource \"pods\" in API group \"\" in the namespace \"ns-2\": RBAC: role.rbac.authorization.k8s.io \"view-pod\" not found",
+  "reason": "Forbidden",
+  "details": {
+    "kind": "pods"
+  },
+  "code": 403
+}
+
+```
+
+현재는 등록 된 서비스가 없어서 조회 할 내용이 없습니다.
+
+아래 그림은 현재 롤의 상태를 나타냅니다.
+
+![롤과 롤 바인딩-3](./imgs/00029.png)
+
+그렇다면 네임스페이스마다 하나하나 롤을 생성해야 하는 걸까요?
+
+답은 그렇습니다.
+
+롤은 네임스페이스에 포함된 컴포넌트이기 때문에 권한을 할당할 네임스페이스 마다 만들어야 합니다.
+
+이는 여러 롤을 가진 사람은 매우 불편합니다.
+
+따라서 여러 네임스페이스를 처리하는 롤이 필요하며 이 롤의 명칭은 클러스터롤(`ClusterRole`) 입니다.
+
+아래 그림과 같습니다.
+
+![롤과 롤 바인딩-4](./imgs/00030.png)
+
+클러스터의 롤을 사용하면 사용자의 권한을 세분화하여 등록 하지는 못하지만 네임스페이스와 같은 상세 공간에 격리 되지 않으며 권한의 할당과 분리가 편리합니다.
+
+먼저 클러스터 롤부터 생성해야하므로 설정 파일(`00038.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: view-pod
+rules:
+- apiGroups: [""]
+  resources: ["pods", "service"]
+  verbs: ["get","list"]
+```
+
+다음은 클러스터 롤을 사용하여 서비스 계정으로 연결하는 클러스터 롤 바인딩을 생성하기 위하여 설정 파일(`00039.yml`)을 생성한 다음 아래 설정 값을 등록합니다.
+
+```yml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: view-pod-clusterbinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view-pod
+subjects:
+- namespace: ns-1
+  kind: ServiceAccount
+  name: sa-1
+```
+
+설정 파일을 사용하여 클러스터 롤과 클러스터 롤 바인딩을 생성한 다음 실습을 진행하도록 합니다.
+
+```sh
+# 설정 파일을 사용하여 클러스터 롤을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00038.yml
+clusterrole.rbac.authorization.k8s.io/view-pod created
+
+# 생성한 클러스터 롤을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get clusterrole view-pod
+NAME       CREATED AT
+view-pod   2022-10-27T04:50:24Z
+
+# 생성한 클러스터 롤을 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe clusterrole view-pod
+Name:         view-pod
+Labels:       <none>
+Annotations:  <none>
+PolicyRule:
+  Resources  Non-Resource URLs  Resource Names  Verbs
+  ---------  -----------------  --------------  -----
+  pods       []                 []              [get list]
+  service    []                 []              [get list]
+
+# 설정 파일을 사용하여 클러스터 롤 바인드를 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00039.yml
+clusterrolebinding.rbac.authorization.k8s.io/view-pod-clusterbinding created
+
+# 클러스터 롤 바인딩을 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get clusterrolebinding view-pod-clusterbinding
+NAME                      ROLE                   AGE
+view-pod-clusterbinding   ClusterRole/view-pod   2m2s
+
+# 클러스터 롤 바인딩을 상세 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe clusterrolebinding view-pod-clusterbinding
+Name:         view-pod-clusterbinding
+Labels:       <none>
+Annotations:  <none>
+Role:
+  Kind:  ClusterRole
+  Name:  view-pod
+Subjects:
+  Kind            Name  Namespace
+  ----            ----  ---------
+  ServiceAccount  sa-1  ns-1
+
+# 전체 파드 리스트를 조회
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/pods
+{
+  "kind": "PodList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "94572"
+  },
+  "items": [
+    ...
+  ]
+}
+
+# ns-1 네임스페이스의 파드를 조회
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/ns-1/pods
+{
+  "kind": "PodList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "94630"
+  },
+  "items": [
+    ...
+  ]
+}
+
+# ns-2 네임스페이스의 파드를 조회
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/ns-2/pods
+{
+  "kind": "PodList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "94676"
+  },  
+  "items": [
+    ...
+  ]
+}
+
+# 다음 실습을 위하여 네임스페이스 롤은 바인딩 되어 있지 않음을 확인
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "namespaces is forbidden: User \"system:serviceaccount:ns-1:sa-1\" cannot list resource \"namespaces\" in API group \"\" at the cluster scope",
+  "reason": "Forbidden",
+  "details": {
+    "kind": "namespaces"
+  },
+  "code": 403
+}
+```
+
+이번에도 역시 클러스터 롤과 롤 바인드를 명령문을 사용하여 등록 해보겠습니다.
+
+```sh
+# 명령문을 사용하여 클러스터 롤을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create clusterrole view-namespace --resource="namespaces" --verb="get,list"
+clusterrole.rbac.authorization.k8s.io/view-namespace created
+
+# 명령문을 사용하여 클러스터 롤 바인딩을 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create clusterrolebinding view-namespace-clusterbinding --clusterrole="view-namespace" --serviceaccount="ns-1:sa-1"
+clusterrolebinding.rbac.authorization.k8s.io/view-namespace-clusterbinding created
+
+# 터미널로 돌아 가서 실습 진행
+curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $API_TOKEN" https://$KUBERNETES_SERVICEHOST:$KUBERNETES_SERVICE_PORT_HTTPS/api/v1/namespaces/
+{
+  "kind": "NamespaceList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "94983"
+  },
+  "items": [
+      ...
+  ]
+}
+
+# 실습이 끝난 클러스터 롤과 클러스터 롤 바인드를 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete clusterrole view-pod
+clusterrole.rbac.authorization.k8s.io "view-pod" deleted
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete clusterrole view-namespace
+clusterrole.rbac.authorization.k8s.io "view-namespace" deleted
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete clusterrolebinding view-pod-clusterbinding
+clusterrolebinding.rbac.authorization.k8s.io "view-pod-clusterbinding" deleted
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete clusterrolebinding view-namespace-clusterbinding
+clusterrolebinding.rbac.authorization.k8s.io "view-namespace-clusterbinding" deleted
+
+```
+
+#### node security
+

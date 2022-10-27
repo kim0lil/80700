@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc
+spec:
+  clusterIP : None
+  ports:
+  - name: http
+    port: 80
+  
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: statefulset-pod
+spec:
+  serviceName: svc
+  selector:
+    matchLabels:
+      app: node
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: node
+    spec:
+      containers:
+      - name: app
+        image: kim0lil/80700:v-1.0.5
+        ports:
+        - name: http
+          containerPort: 8080
+        volumeMounts:
+        - name: pvc
+          mountPath: /var/data
+  volumeClaimTemplates:
+  - metadata:
+      name: pvc
+    spec:
+      resources:
+        requests:
+          storage: 1Gi
+      accessModes:
+      - ReadWriteOnce
