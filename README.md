@@ -4,6 +4,54 @@
 
 쿠버네티스 설치와 관련 된 내용은 [쿠버네티스 설치](./fragments/fragment000.md)를 보도록 합니다.
 
+## kubernetes setting
+
+쿠버네티스를 설정하는 방법과 관리법을 설명합니다.
+
+기본 네임스페이스를 확인하는 방법은 아래와 같습니다.
+
+```sh
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl config view
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority: C:\Users\admin\.minikube\ca.crt
+    extensions:
+    - extension:
+        last-update: Mon, 24 Oct 2022 23:00:45 KST
+        provider: minikube.sigs.k8s.io
+        version: v1.26.0
+      name: cluster_info
+    server: https://127.0.0.1:52522
+  name: minikube
+contexts:
+- context:
+    cluster: minikube
+    extensions:
+    - extension:
+        last-update: Mon, 24 Oct 2022 23:00:45 KST
+        provider: minikube.sigs.k8s.io
+        version: v1.26.0
+      name: context_info
+    namespace: default   # 기본 네임스페이스 확인
+    user: minikube
+  name: minikube
+...
+```
+
+네임스페이스간 스위칭을 할 경우 아래와 같이 스위칭합니다.
+
+```sh
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl config set-context minikube --namespace=kube-system
+Context "minikube" modified.
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl config set-context minikube --namespace=default
+Context "minikube" modified.
+```
+
 ## hello kubernetes
 
 쿠버네티스를 시작하기 위하여 도커를 사용하여 간단한 애플리케이션을 생성하도록 하겠습니다.
@@ -5076,10 +5124,15 @@ admin@jinhyeok MINGW64 ~/dev/80700 (master)
 $ kubectl delete pod statefulset-pod-0
 pod "statefulset-pod-0" deleted
 
-# 신규로 생성 된 파드에도 해당 값이 존재 하는지 확인
+# 신규로 생성 된 파드에도 이전 값이 존재 하는지 확인
 admin@jinhyeok MINGW64 ~/dev/80700 (master)
 $ kubectl exec -it pod/statefulset-pod-0 -- curl localhost:8080
 {"error_code":0,"error_message":null,"data":"[read] volume resource statefulset-pod-0"}
+
+# 테스트가 끝난 스테이트풀 셋을 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete statefulset statefulset-pod
+statefulset.apps "statefulset-pod" deleted
 ```
 
 ## kubernetes configuration
@@ -8584,5 +8637,422 @@ clusterrolebinding.rbac.authorization.k8s.io "view-namespace-clusterbinding" del
 
 ```
 
+이로서 api-server의 보안에 관해서 끝내도록 하겠습니다.
+
+뒤편에서 상세한 보안에 관해서 다룰 예정이므로 그때 다시 한번 다루도록 하겠습니다.
+
 #### node security
 
+일반적으로 우리가 배포하는 애플리케이션은 컨테이너의 영역으로 격리 됩니다.
+
+또한 가상 네트워크 어댑터를 사용하여 실제 노드와는 분리 되어 동작합니다.
+
+![노드 보안-1](./imgs/00031.png)
+
+각 파드는 고유한 애플리케이션 네임스페이스를 사용하며 가상 네트워크와 쿠버네티스의 프록시가 파드를 격리하고 있습니다.
+
+하지만 모든 파드가 고유한 가상 네트워크 주소를 가지지는 않습니다.
+
+가령 원할 경우 노트의 네트워크 주소를 필요로 할 수도 있습니다.
+
+![노드 보안-2](./imgs/00032.png)
+
+테스트를 위하여 설정 파일(`00041.yml`)을 생성한 다음 아래 설정값을 등록하겠습니다.
+
+```yml
+
+```
+
+```sh
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00041.yml
+pod/normal-pod created
+pod/node-port-pod created
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod -o wide
+NAME            READY   STATUS    RESTARTS   AGE   IP           NODE       ...
+node-port-pod   1/1     Running   0          34s   192.168.49.2 minikube   ...
+normal-pod      1/1     Running   0          34s   172.17.0.5   minikube   ...
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it normal-pod -- ifconfig
+eth0      Link encap:Ethernet  HWaddr 02:42:AC:11:00:05
+          inet addr:172.17.0.5  Bcast:172.17.255.255  Mask:255.255.0.0
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+$ kubectl exec -it node-port-pod -- ifconfig
+...
+eth0      Link encap:Ethernet  HWaddr 02:42:C0:A8:31:02
+          inet addr:192.168.49.2  Bcast:192.168.49.255  Mask:255.255.255.0
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:569453 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:184022 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:606589261 (578.4 MiB)  TX bytes:20100926 (19.1 MiB)
+...
+
+# 테스트가 끝난 파드 삭제
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete pod --all
+pod "node-port-pod" deleted
+pod "normal-pod" deleted
+```
+
+이번에는 노드의 포트를 사용해보겠습니다.
+
+기존 서비스를 생성할 떄 `ports`항목을 기억할 것입니다.
+
+```yml
+...
+spec:
+  ports:
+  - nodePort: 8080
+    targetPort: 8080
+...
+```
+
+이는 노드의 포트를 파드에 연결하는 구문이었습니다.
+
+![노드 보안-3](./imgs/00033.png)
+
+실습을 위하여 새로운 설정 파일(`00042.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: node-port-pod
+  labels:
+    app: node
+spec:
+  containers:
+  - image: kim0lil/80700:v-1.0.0
+    name: node-port-container
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-8080-service
+spec:
+  type: NodePort
+  selector: 
+    app: node
+  ports:
+  - port: 8080           # 서비스를 노출할 포트
+    nodePort: 30001      # 노드로 들어 오는 포트를 지정
+    targetPort: 8080     # 파드로 전송할 포트를 지정
+```
+
+생성한 설정 파일을 사용하여 노드의 `30001`포트를 파드의 `8080`포트로 연결하였습니다.
+
+실습을 진행하겠습니다.
+
+```sh
+# 설정 파일을 사용하여 파드와 서비스 생성
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00042.yml
+pod/node-port-pod created
+service/node-8080-service created
+
+# 생성한 파드 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod
+NAME            READY   STATUS    RESTARTS   AGE
+node-port-pod   1/1     Running   0          12s
+
+# 생성한 서비스 조회
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get service
+NAME                TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+kubernetes          ClusterIP   10.96.0.1       <none>        443/TCP          4d22h
+node-8080-service   NodePort    10.96.148.134   <none>        8080:30001/TCP   15s
+
+# 노드 조회
+# 노드의 INTERNAL-IP를 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get node -o wide
+NAME       STATUS   ROLES    AGE     VERSION   INTERNAL-IP    EXTERNAL-IP   ...
+minikube   Ready    <none>   4d22h   v1.24.1   192.168.49.2   <none>        ...
+
+# 서비스 상세 조회
+# 서비스의 NodePort 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe service node-8080-service
+Name:                     node-8080-service
+Namespace:                default
+Labels:                   <none>
+Annotations:              <none>
+Selector:                 app=node
+Type:                     NodePort
+IP Family Policy:         SingleStack
+IP Families:              IPv4
+IP:                       10.96.148.134
+IPs:                      10.96.148.134
+Port:                     <unset>  8080/TCP
+TargetPort:               8080/TCP
+NodePort:                 <unset>  30001/TCP
+Endpoints:                172.17.0.5:8080
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   <none>
+
+# 임시 파드를 사용하여 노드 포트로 요청 실행
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl run net-test --image=centos -- curl http://192.168.49.2:30001
+pod/net-test created
+
+# 요청 결과값 확인
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl logs net-test
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   101    0   101    0     0    98k      0 --:--:-- --:--:-- --:--:--   98k
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is node-port-pod"}
+
+# 다음 실습을 위하여 파드와 서비스 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete pod,service --all
+pod "net-test" deleted
+pod "node-port-pod" deleted
+service "node-8080-service" deleted
+```
+
+하지만 서비스를 사용할 경우 하나의 노드에서 하나의 파드에만 고유한 서비스를 제공하지 않을 수 있습니다.
+
+![노드 보안-4](./imgs/00034.png)
+
+설정 파일(`00043.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+
+```
+
+```sh
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00043.yml
+deployment.apps/node-deployment created
+service/node-8080-service created
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get service -o wide
+NAME                TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)       
+kubernetes          ClusterIP   10.96.0.1        <none>        443/TCP       
+node-8080-service   NodePort    10.106.199.234   <none>        8080:30001/TCP
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pods -l "app in (node)"
+NAME                             READY   STATUS    RESTARTS   AGE
+node-deployment-b4f98cd6-5mx97   1/1     Running   0          62s
+node-deployment-b4f98cd6-9l4mt   1/1     Running   0          62s
+node-deployment-b4f98cd6-d7jpw   1/1     Running   0          62s
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl describe service node-8080-service
+Name:                     node-8080-service
+Namespace:                default
+Labels:                   <none>
+Annotations:              <none>
+Selector:                 app=node
+Type:                     NodePort
+IP Family Policy:         SingleStack
+IP Families:              IPv4
+IP:                       10.106.199.234
+IPs:                      10.106.199.234
+Port:                     <unset>  8080/TCP
+TargetPort:               8080/TCP
+NodePort:                 <unset>  30001/TCP
+Endpoints:                172.17.0.6:8080,172.17.0.7:8080,172.17.0.8:8080
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   <none>
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get node -o wide
+NAME       STATUS   ROLES    AGE     VERSION   INTERNAL-IP    EXTERNAL-IP
+minikube   Ready    <none>   4d22h   v1.24.1   192.168.49.2   <none>
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it node-deployment-b4f98cd6-d7jpw -- curl http://192.168.49.2:30001
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is node-deployment-b4f98cd6-9l4mt"}
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it node-deployment-b4f98cd6-d7jpw -- curl http://192.168.49.2:30001
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is node-deployment-b4f98cd6-5mx97"}
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it node-deployment-b4f98cd6-9l4mt -- curl http://192.168.49.2:30001
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is node-deployment-b4f98cd6-d7jpw"}
+
+# 실습이 끝난 디플로이먼트와 서비스 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete deployment,svc --all
+deployment.apps "node-deployment" deleted
+service "node-8080-service" deleted
+```
+
+이럴 경우 원하지 않는 파드의 요청을 처리하게 됩니다.
+
+따라서 이럴 경우 hostPort 속성을 사용하여 노드의 포트를 파드로 포워딩합니다.
+
+주의할 점은 노드의 포트를 파드로 포워드하기 위해서는 단일 파드로 이루어져있어야 합니다.
+
+![노드 보안-5](./imgs/00035.png)
+
+설정 파일(`00044.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: node
+  template:
+    metadata:
+      name: node-pod
+      labels:
+        app: node
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: node-pod-container
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-host-port
+spec:
+  replicas: 3       # replicas를 {3}으로 등록(설명)
+  selector:
+    matchLabels:
+      app: node
+  template:
+    metadata:
+      name: host-port-pod
+      labels:
+        app: node
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: host-port-container
+        ports:
+        - hostPort: 28080          # 호스트 포트
+          containerPort: 8080      # 컨테이너 포트
+```
+
+설정 파일을 사용하여 디플로이먼트를 생성합니다.
+
+이 때 파드는 단일 파드가 아닌 복제 파드가 발생하므로 하나를 제외한 나머지 파드는 대기 상태로 생성됩니다.
+
+```sh
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00044.yml
+deployment.apps/deployment-host-port created
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get deployments
+NAME                   READY   UP-TO-DATE   AVAILABLE   AGE
+deployment-host-port   1/3     3            1           102s
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl get pod -o wide
+NAME                                    READY   STATUS    RESTARTS   AGE   IP           NODE       ...
+deployment-host-port-64db5d5c7f-h7b48   1/1     Running   0          29s   172.17.0.5   minikube   ...
+deployment-host-port-64db5d5c7f-mnzzn   0/1     Pending   0          29s   <none>       <none>     ...
+deployment-host-port-64db5d5c7f-w8xt8   0/1     Pending   0          29s   <none>       <none>     ...
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl run net-test --image=centos -- curl http://192.168.49.2:28080
+pod/net-test created
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl logs net-test
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   125    0   125    0     0  62500      0 --:--:-- --:--:-- --:--:-- 62500
+{"error_code":0,"error_message":null,"data":"Hello Kubernetes this is Container ID is deployment-host-port-64db5d5c7f-h7b48"}
+
+# 다음 실습을 위하여 디플로이먼트와 파드를 제거
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl delete deployment,pod --all
+deployment.apps "deployment-host-port" deleted
+pod "deployment-host-port-64db5d5c7f-h7b48" deleted
+pod "deployment-host-port-64db5d5c7f-mnzzn" deleted
+pod "deployment-host-port-64db5d5c7f-w8xt8" deleted
+pod "net-test" deleted
+```
+
+노드의 아이피를 사용하는 파드를 생성하였다면 이번에는 호스트의 프로세스를 공유(조회 및 접근)하는 파드를 생성하겠습니다.
+
+각 컨테이너는 고유한 네임스페이스를 사용하므로 각 네임스페이스 안에서 프로세스 아이디는 고유합니다.
+
+![노드 보안-6](./imgs/00036.png)
+
+실습을 위하여 새로운 설정 파일(`00045.yml`)을 생성한 다음 아래 설정값을 등록합니다.
+
+```yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: normal-pod
+  labels:
+    app: node
+spec:
+  containers:
+  - image: kim0lil/80700:v-1.0.0
+    name: normal-container
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: node-pid-pod
+  labels:
+    app: node
+spec:
+  hostPID: true      # 호스트간 프로세스 아이디 공유 가능
+  hostIPC: true      # 호스트간 처리 공유 가능
+  containers:
+  - image: kim0lil/80700:v-1.0.0
+    name: node-pid-container
+```
+
+
+```sh
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl create -f assets/00004/00045.yml
+pod/normal-pod created
+pod/node-pid-pod created
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it normal-pod -- ps aux
+USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root           1  0.0  0.5 591616 40340 ?        Ssl  13:34   0:00 node /app.js
+root          68  0.0  0.0   6696  2980 pts/0    Rs+  13:37   0:00 ps aux
+
+admin@jinhyeok MINGW64 ~/dev/80700 (master)
+$ kubectl exec -it node-pid-pod -- ps aux
+USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root           1  0.0  0.1  22688 11440 ?        Ss   Oct26   0:04 /sbin/init
+root         214  0.0  0.5  93312 47388 ?        S<s  Oct26   1:12 /lib/systemd/
+108          226  0.0  0.0   7012  2552 ?        Ss   Oct26   0:00 /usr/bin/dbus
+root         230  0.5  0.8 2170800 64900 ?       Ssl  Oct26  21:49 /usr/bin/cont
+root         237  0.0  0.0  12176  6324 ?        Ss   Oct26   0:00 sshd: /usr/sb
+root         748  1.3  0.6 743872 49788 ?        Ssl  Oct26  54:17 /usr/bin/cri-
+root        2477  2.5  1.3 3082504 112676 ?      Ssl  Oct26 103:46 /usr/bin/dock
+root        3475  1.7  1.4 2522420 116284 ?      Ssl  Oct26  71:01 /var/lib/mini
+root        3680  0.0  0.1 712652 14028 ?        Sl   Oct26   0:09 /usr/bin/cont
+root        3706  0.0  0.1 712652 12724 ?        Sl   Oct26   0:09 /usr/bin/cont
+root        3729  0.0  0.1 712652 13704 ?        Sl   Oct26   0:10 /usr/bin/cont
+...
+```

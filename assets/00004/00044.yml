@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: node
+  template:
+    metadata:
+      name: node-pod
+      labels:
+        app: node
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: node-pod-container
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-host-port
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: node
+  template:
+    metadata:
+      name: host-port-pod
+      labels:
+        app: node
+    spec:
+      containers:
+      - image: kim0lil/80700:v-1.0.0
+        name: host-port-container
+        ports:
+        - hostPort: 28080
+          containerPort: 8080
